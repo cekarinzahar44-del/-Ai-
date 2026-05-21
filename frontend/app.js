@@ -7,10 +7,10 @@ try {
     }
     tg.expand();
     tg.enableClosingConfirmation();
+    tg.ready();
     console.log('✅ Telegram WebApp initialized');
 } catch(e) {
     console.error('❌ Telegram WebApp error:', e);
-    // Режим отладки - показываем ошибку но не ломаем приложение
     tg = {
         initDataUnsafe: { user: { id: null, first_name: 'Тестовый', username: 'test' } },
         expand: () => {},
@@ -19,11 +19,11 @@ try {
         ready: () => {},
         sendData: () => {}
     };
-    showToast('Откройте приложение через Telegram', 'error');
 }
 
-// ===== API BASE (используем текущий домен) =====
-const API_BASE = 'https://bot-1779392471-6640-zahar0304.bothost.tech';
+// ===== API BASE =====
+const API_BASE = window.location.origin;
+console.log('🌐 API Base:', API_BASE);
 
 // App state
 let currentUser = null;
@@ -47,8 +47,7 @@ try {
 const recipeInput = document.getElementById('recipeInput');
 const generateBtn = document.getElementById('generateBtn');
 const voiceBtn = document.getElementById('voiceBtn');
-const detailsSection = document.getElementById('detailsSection');
-const detailsInput = document.getElementById('detailsInput');
+const detailsSection = document.getElementById('detailsSection');const detailsInput = document.getElementById('detailsInput');
 const submitDetailsBtn = document.getElementById('submitDetailsBtn');
 const loadingSection = document.getElementById('loadingSection');
 const recipeSection = document.getElementById('recipeSection');
@@ -67,9 +66,11 @@ function showToast(message, type = 'info') {
         toast.innerHTML = '<span class="toast-icon"></span><span class="toast-message"></span>';
         document.body.appendChild(toast);
     }
+    
     toast.className = `toast ${type}`;
     toast.querySelector('.toast-message').textContent = message;
     toast.classList.add('show');
+    
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
@@ -96,7 +97,6 @@ function showRecipe() {
     if (favoritesSection) favoritesSection.style.display = 'none';
     if (profileSection) profileSection.style.display = 'none';
 }
-
 function showFavorites() {
     if (favoritesSection) favoritesSection.style.display = 'block';
     if (recipeSection) recipeSection.style.display = 'none';
@@ -132,14 +132,11 @@ function escapeHtml(text) {
 }
 
 function getUserId() {
-    // Пытаемся получить ID из Telegram
     if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
         return tg.initDataUnsafe.user.id;
     }
-    // Запасной вариант - используем localStorage или тестовый ID
     const savedId = localStorage.getItem('test_user_id');
     if (savedId) return parseInt(savedId);
-    // Тестовый ID (замените на свой)
     return 8043971654;
 }
 
@@ -148,9 +145,7 @@ async function getUserData() {
     try {
         const userId = getUserId();
         
-        if (!userId) {
-            showToast('Ошибка авторизации, перезапустите приложение', 'error');
-            // Временные данные для демонстрации
+        if (!userId) {            showToast('Ошибка авторизации', 'error');
             currentUser = {
                 hasSubscription: false,
                 freeRecipesLeft: 3,
@@ -162,7 +157,18 @@ async function getUserData() {
         }
 
         console.log('📡 Запрос пользователя:', userId);
-        const response = await fetch(`${API_BASE}/api/user/${userId}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch(`${API_BASE}/api/user/${userId}`, {
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -180,12 +186,15 @@ async function getUserData() {
 
     } catch (error) {
         console.error('Get user error:', error);
-        showToast('Ошибка загрузки: ' + error.message, 'error');
         
-        // Временные данные для демонстрации, чтобы приложение работало
+        if (error.name === 'AbortError') {
+            showToast('Превышено время ожидания сервера', 'error');
+        } else {
+            showToast('Ошибка загрузки: ' + error.message, 'error');
+        }
+        
         currentUser = {
-            hasSubscription: false,
-            freeRecipesLeft: 3,
+            hasSubscription: false,            freeRecipesLeft: 3,
             freeLimit: 3,
             canGenerate: true
         };
@@ -197,7 +206,6 @@ async function getUserData() {
 
 function updateUserStatus() {
     if (!currentUser || !userStatusSpan) return;
-
     if (currentUser.hasSubscription) {
         userStatusSpan.innerHTML = `✨ ${currentUser.subscription?.plan_type || 'PRO'}`;
     } else {
@@ -224,6 +232,9 @@ async function generateRecipe(query, details = '') {
     try {
         console.log('📡 Генерация рецепта:', query);
         
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        
         const response = await fetch(`${API_BASE}/api/generate`, {
             method: 'POST',
             headers: {
@@ -232,10 +243,12 @@ async function generateRecipe(query, details = '') {
             body: JSON.stringify({
                 tgId: userId,
                 query: query,
-                details: details,
-                planType: currentUser.subscription?.plan_type || 'FREE'
-            })
+                details: details,                planType: currentUser.subscription?.plan_type || 'FREE'
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -246,7 +259,7 @@ async function generateRecipe(query, details = '') {
 
         if (data.success) {
             displayRecipe(data.recipe);
-            await getUserData(); // Обновляем счетчик бесплатных рецептов
+            await getUserData();
             pendingQuery = null;
             hideLoading();
             return true;
@@ -263,9 +276,13 @@ async function generateRecipe(query, details = '') {
     } catch (error) {
         console.error('Generate error:', error);
         hideLoading();
-        showToast(error.message, 'error');
         
-        // Демо-рецепт для теста, если API не отвечает
+        if (error.name === 'AbortError') {
+            showToast('Превышено время ожидания генерации', 'error');
+        } else {
+            showToast(error.message, 'error');
+        }
+        
         const demoRecipe = {
             title: query,
             description: `Вкусный рецепт "${query}" для вас!`,
@@ -275,8 +292,7 @@ async function generateRecipe(query, details = '') {
                 'Растительное масло'
             ],
             time: '30-40 минут',
-            steps: [
-                `Подготовьте все ингредиенты для ${query}.`,
+            steps: [                `Подготовьте все ингредиенты для ${query}.`,
                 'Следуйте инструкции приготовления.',
                 'Подавайте горячим, украсив зеленью.',
                 'Приятного аппетита!'
@@ -290,12 +306,10 @@ async function generateRecipe(query, details = '') {
 
 function displayRecipe(recipe) {
     currentRecipe = recipe;
-
-    // Title
+    
     const titleEl = document.getElementById('recipeTitle');
     if (titleEl) titleEl.textContent = recipe.title || 'Твой рецепт';
 
-    // Description
     const descEl = document.getElementById('recipeDescription');
     if (descEl) {
         if (recipe.description) {
@@ -306,11 +320,9 @@ function displayRecipe(recipe) {
         }
     }
 
-    // Time
     const timeEl = document.getElementById('recipeTime');
     if (timeEl) timeEl.textContent = recipe.time || '30 минут';
 
-    // Ingredients
     const ingredientsList = document.getElementById('ingredientsList');
     if (ingredientsList) {
         ingredientsList.innerHTML = '';
@@ -321,7 +333,6 @@ function displayRecipe(recipe) {
         });
     }
 
-    // Steps
     const stepsList = document.getElementById('stepsList');
     if (stepsList) {
         stepsList.innerHTML = '';
@@ -330,13 +341,11 @@ function displayRecipe(recipe) {
             div.className = 'step-item';
             div.innerHTML = `
                 <span class="step-number">${idx + 1}</span>
-                <span class="step-text">${escapeHtml(step)}</span>
-            `;
+                <span class="step-text">${escapeHtml(step)}</span>            `;
             stepsList.appendChild(div);
         });
     }
 
-    // Tips
     const tipsBlock = document.getElementById('tipsBlock');
     if (tipsBlock) {
         if (recipe.tips) {
@@ -352,7 +361,6 @@ function displayRecipe(recipe) {
         }
     }
 
-    // Nutrition (VIP feature)
     const nutritionBlock = document.getElementById('nutritionBlock');
     if (nutritionBlock && recipe.nutrition) {
         const nutritionContent = document.getElementById('nutritionContent');
@@ -381,10 +389,8 @@ function displayRecipe(recipe) {
         nutritionBlock.style.display = 'none';
     }
 
-    // Favorite button state
     const isFavorite = favorites.some(f => f.title === recipe.title);
-    const favBtn = document.getElementById('favoriteBtn');
-    if (favBtn) {
+    const favBtn = document.getElementById('favoriteBtn');    if (favBtn) {
         if (isFavorite) {
             favBtn.classList.add('active');
         } else {
@@ -393,15 +399,12 @@ function displayRecipe(recipe) {
     }
 
     showRecipe();
-    
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // Favorites
 function saveToFavorites() {
     if (!currentRecipe) return;
-
     const exists = favorites.find(f => f.title === currentRecipe.title);
 
     if (!exists) {
@@ -417,7 +420,7 @@ function saveToFavorites() {
 
     localStorage.setItem('chef_favorites', JSON.stringify(favorites));
     renderFavorites();
-    
+
     const favBtn = document.getElementById('favoriteBtn');
     if (favBtn) {
         if (!exists) {
@@ -431,14 +434,12 @@ function saveToFavorites() {
 function renderFavorites() {
     const container = document.getElementById('favoritesList');
     const empty = document.getElementById('emptyFavorites');
-
     if (!container) return;
 
     if (!favorites.length) {
         container.innerHTML = '';
         if (empty) empty.style.display = 'block';
-        return;
-    }
+        return;    }
 
     if (empty) empty.style.display = 'none';
 
@@ -467,16 +468,15 @@ window.deleteFavorite = function(index) {
 // Profile
 function updateProfile() {
     if (!currentUser) return;
-
     const firstName = tg?.initDataUnsafe?.user?.first_name || 'Пользователь';
     const username = tg?.initDataUnsafe?.user?.username || 'user';
-    
+
     const nameEl = document.getElementById('profileName');
     if (nameEl) nameEl.textContent = firstName;
-    
+
     const usernameEl = document.getElementById('profileUsername');
     if (usernameEl) usernameEl.textContent = '@' + username;
-    
+
     const favoritesCount = document.getElementById('favoritesCount');
     if (favoritesCount) favoritesCount.textContent = favorites.length;
 }
@@ -488,14 +488,12 @@ function showSubscriptionModal() {
 }
 
 function hideSubscriptionModal() {
-    const modal = document.getElementById('subscriptionModal');
-    if (modal) modal.style.display = 'none';
+    const modal = document.getElementById('subscriptionModal');    if (modal) modal.style.display = 'none';
 }
 
 // Share recipe
 async function shareRecipe() {
     if (!currentRecipe) return;
-
     const text = `🍽 ${currentRecipe.title}\n\n` +
         `🥄 Ингредиенты:\n${(currentRecipe.ingredients || []).map(i => `• ${i}`).join('\n')}\n\n` +
         `🔥 Приготовление:\n${(currentRecipe.steps || []).map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
@@ -515,19 +513,13 @@ async function shareRecipe() {
     }
 }
 
-// Save as image (requires html2canvas)
-async function saveRecipeAsImage() {
-    if (!currentRecipe) return;
-    showToast('Функция сохранения изображения будет доступна в следующем обновлении', 'info');
-}
-
 // Voice recording
 async function startRecording() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
-
+        
         mediaRecorder.ondataavailable = e => {
             if (e.data.size > 0) audioChunks.push(e.data);
         };
@@ -540,10 +532,16 @@ async function startRecording() {
             showToast('🎤 Распознаю...', 'info');
             
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
+                
                 const response = await fetch(`${API_BASE}/api/transcribe`, {
                     method: 'POST',
-                    body: formData
+                    body: formData,                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
+                
                 const data = await response.json();
                 if (data.success && data.text && recipeInput) {
                     recipeInput.value = data.text;
@@ -579,7 +577,7 @@ function stopRecording() {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 App starting...');
     await getUserData();
-
+    
     // Navigation
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -588,8 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const page = item.dataset.page;
             if (page === 'home') showWelcome();
             if (page === 'favorites') showFavorites();
-            if (page === 'profile') showProfile();
-        });
+            if (page === 'profile') showProfile();        });
     });
 
     // Generate button
@@ -634,15 +631,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Share button
     document.getElementById('shareBtn')?.addEventListener('click', shareRecipe);
 
-    // Save image button
-    document.getElementById('saveImageBtn')?.addEventListener('click', saveRecipeAsImage);
-
     // New recipe button
     document.getElementById('newRecipeBtn')?.addEventListener('click', () => {
         showWelcome();
         if (recipeInput) recipeInput.value = '';
-        currentRecipe = null;
-    });
+        currentRecipe = null;    });
 
     // Upgrade button
     document.getElementById('upgradeBtn')?.addEventListener('click', showSubscriptionModal);
@@ -650,31 +643,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Modal close
     document.querySelector('.close-modal')?.addEventListener('click', hideSubscriptionModal);
     document.querySelector('.modal-overlay')?.addEventListener('click', hideSubscriptionModal);
+
+    // Theme adaptation
+    if (tg && tg.colorScheme === 'dark') {
+        document.body.classList.add('dark');
+    }
     
-    // Close payment modal
-    document.querySelector('.close-payment-modal')?.addEventListener('click', () => {
-        const modal = document.getElementById('paymentModal');
-        if (modal) modal.style.display = 'none';
-    });
-    
-    document.querySelector('.cancel-payment')?.addEventListener('click', () => {
-        const modal = document.getElementById('paymentModal');
-        if (modal) modal.style.display = 'none';
-    });
-    
-    // Copy SBP button
-    document.getElementById('copySbpBtn')?.addEventListener('click', () => {
-        const number = document.getElementById('sbpNumber')?.textContent;
-        if (number) {
-            navigator.clipboard.writeText(number);
-            showToast('Номер скопирован!', 'success');
-        }
-    });
+    console.log('✅ App.js loaded successfully');
 });
-
-// Theme adaptation
-if (tg && tg.colorScheme === 'dark') {
-    document.body.classList.add('dark');
-}
-
-console.log('✅ App.js loaded successfully');
