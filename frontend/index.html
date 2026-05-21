@@ -2,267 +2,208 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шеф-Повар AI</title>
-    <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-        .card {
-            background: white;
-            border-radius: 20px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-        }
-        h1 {
-            font-size: 28px;
-            margin-bottom: 8px;
-            color: #333;
-        }
-        .status {
-            background: #e8f5e9;
-            padding: 10px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            color: #2e7d32;
-        }
-        textarea {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            font-size: 16px;
-            font-family: inherit;
-            margin-bottom: 12px;
-            resize: vertical;
-        }
-        button {
-            width: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        button:active {
-            transform: scale(0.98);
-        }
-        .recipe {
-            background: white;
-            border-radius: 20px;
-            padding: 24px;
-            margin-top: 20px;
-        }
-        .recipe h2 {
-            color: #667eea;
-            margin-bottom: 16px;
-        }
-        .recipe h3 {
-            margin: 16px 0 8px;
-            color: #555;
-        }
-        .recipe ul, .recipe ol {
-            margin-left: 20px;
-            margin-bottom: 16px;
-        }
-        .recipe li {
-            margin: 8px 0;
-            line-height: 1.5;
-        }
-        .loading {
-            text-align: center;
-            padding: 40px;
-        }
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .error {
-            color: #d32f2f;
-            background: #ffebee;
-            padding: 12px;
-            border-radius: 12px;
-            margin-top: 16px;
-        }
-        .success {
-            color: #2e7d32;
-            background: #e8f5e9;
-            padding: 12px;
-            border-radius: 12px;
-            margin-top: 16px;
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div class="card">
-            <h1>👨‍🍳 Шеф-Повар AI</h1>
-            <div class="status" id="status">🔄 Подключение...</div>
-        </div>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-emoji">👨🍳</span>
+                    <h1>Шеф-Повар AI</h1>
+                </div>
+                <div class="user-status">
+                    <span class="status-badge" id="userStatus">🔄 Подключение...</span>
+                </div>
+            </div>
+            <div class="header-wave">
+                <svg viewBox="0 0 1440 100" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="#F7F9FC" fill-opacity="1" d="M0,64L80,69.3C160,75,320,85,480,80C640,75,800,53,960,48C1120,43,1280,53,1360,58.7L1440,64L1440,100L1360,100C1280,100,1120,100,960,100C800,100,640,100,480,100C320,100,160,100,80,100L0,100Z"></path>
+                </svg>
+            </div>
+        </header>
 
-        <div class="card">
-            <textarea id="dish" rows="3" placeholder="Что будем готовить? Например: борщ, паста карбонара, пицца..."></textarea>
-            <textarea id="details" rows="2" placeholder="Детали (необязательно): ПП, быстро, на 2 персоны..."></textarea>
-            <button id="cookBtn">🍳 Приготовить рецепт</button>
-        </div>
+        <main class="main-content">
+            <!-- Welcome / Input Section -->
+            <section id="welcomeSection" class="welcome-section">
+                <div class="chef-animation">
+                    <span class="chef-hat">🍲</span>
+                    <span class="sparkles">✨</span>
+                    <span class="steam"></span>
+                </div>
+                <h2>Что приготовим?</h2>
+                <p class="subtitle">Я создам рецепт по вашим ингредиентам или названию блюда</p>
+                
+                <div class="input-section">
+                    <div class="input-wrapper">
+                        <textarea id="recipeInput" rows="3" placeholder="Например: Борщ, Паста Карбонара или что есть в холодильнике..."></textarea>
+                        <div class="input-actions">
+                            <button id="voiceBtn" class="voice-btn" title="Голосовой ввод">
+                                🎤
+                            </button>
+                            <button id="generateBtn" class="generate-btn">
+                                🍳 Приготовить рецепт
+                            </button>                        </div>
+                    </div>
+                </div>
+            </section>
 
-        <div id="result"></div>
+            <!-- Details Input (Optional) -->
+            <section id="detailsSection" class="details-section" style="display: none;">
+                <h3>Детали рецепта</h3>
+                <div class="quick-options">
+                    <button class="quick-option" data-detail="Аллергия на орехи"> Аллергия на орехи</button>
+                    <button class="quick-option" data-detail="Без мяса">🥗 Без мяса</button>
+                    <button class="quick-option" data-detail="Быстро (до 20 мин)">⚡ Быстро</button>
+                    <button class="quick-option" data-detail="Для детей">👶 Для детей</button>
+                </div>
+                <input type="text" id="detailsInput" placeholder="Дополнительные пожелания...">
+                <button id="submitDetailsBtn" class="submit-details-btn">✅ Сформировать</button>
+            </section>
+
+            <!-- Loading -->
+            <section id="loadingSection" class="loading-section" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p>Шеф-повар думает...</p>
+                <p class="loading-tip">Подбираем лучшие ингредиенты 🥑</p>
+            </section>
+
+            <!-- Recipe Result -->
+            <section id="recipeSection" class="recipe-section" style="display: none;">
+                <div class="recipe-card">
+                    <div class="recipe-header">
+                        <h2 id="recipeTitle">Название блюда</h2>
+                        <button id="favoriteBtn" class="favorite-btn">
+                            ❤️
+                        </button>
+                    </div>
+                    
+                    <div id="recipeDescription" class="recipe-description" style="display: none;"></div>
+                    
+                    <div class="recipe-meta">
+                        <div class="meta-item">
+                            <span class="meta-icon">⏱</span>
+                            <span id="recipeTime">30 мин</span>
+                        </div>
+                    </div>
+
+                    <div class="recipe-section-block">
+                        <h3>🥄 Ингредиенты</h3>
+                        <ul id="ingredientsList"></ul>
+                    </div>
+
+                    <div class="recipe-section-block">                        <h3>‍🍳 Пошаговое приготовление</h3>
+                        <div id="stepsList"></div>
+                    </div>
+
+                    <div id="nutritionBlock" class="recipe-section-block" style="display: none;">
+                        <h3>📊 КБЖУ (на 100г)</h3>
+                        <div id="nutritionContent" class="nutrition-grid"></div>
+                    </div>
+
+                    <div id="tipsBlock" class="recipe-section-block" style="display: none;">
+                        <h3>✨ Советы</h3>
+                        <p id="tipsText" style="color: var(--dark-light);"></p>
+                    </div>
+
+                    <div class="recipe-actions">
+                        <button id="shareBtn" class="action-btn"> Поделиться</button>
+                        <button id="newRecipeBtn" class="action-btn">🔄 Новый рецепт</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Favorites -->
+            <section id="favoritesSection" class="favorites-section" style="display: none;">
+                <h2>❤️ Избранное</h2>
+                <div id="favoritesList" class="favorites-list"></div>
+                <div id="emptyFavorites" class="empty-favorites" style="display: none;">
+                    <p>Пока пусто 🍽️</p>
+                    <p class="hint">Сохраняйте рецепты, чтобы не потерять</p>
+                </div>
+            </section>
+
+            <!-- Profile -->
+            <section id="profileSection" class="profile-section" style="display: none;">
+                <div class="profile-card">
+                    <div class="profile-avatar">👤</div>
+                    <h3 id="profileName">Пользователь</h3>
+                    <p id="profileUsername">@username</p>
+                    
+                    <div class="subscription-info">
+                        <div class="info-row">
+                            <span>Ваш тариф:</span>
+                            <span class="status" id="profilePlan">Free</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Рецептов сохранено:</span>
+                            <span id="favoritesCount">0</span>
+                        </div>
+                    </div>
+                    
+                    <button id="upgradeBtn" class="upgrade-btn">🚀 Улучшить подписку</button>                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Nav -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-page="home">
+                <span></span>
+                <span>Главная</span>
+            </button>
+            <button class="nav-item" data-page="favorites">
+                <span>❤️</span>
+                <span>Избранное</span>
+            </button>
+            <button class="nav-item" data-page="profile">
+                <span>👤</span>
+                <span>Профиль</span>
+            </button>
+        </nav>
+
+        <!-- Subscription Modal -->
+        <div id="subscriptionModal" class="modal" style="display: none;">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Подписка</h3>
+                    <button class="close-modal">×</button>
+                </div>
+                <div class="modal-body">
+                    <p style="text-align: center; margin-bottom: 20px;">Безлимитные рецепты, КБЖУ и голосовой ввод</p>
+                    <div class="plan-cards">
+                        <div class="plan-card" onclick="window.selectPlan('PRO', 500)">
+                            <h4>PRO</h4>
+                            <div class="price">500 ₽</div>
+                            <div class="period">30 дней</div>
+                            <ul>
+                                <li>✅ Безлимитные рецепты</li>
+                                <li>✅ Подробные инструкции</li>
+                            </ul>
+                            <button class="select-plan-btn">Выбрать PRO</button>
+                        </div>
+                        <div class="plan-card featured" onclick="window.selectPlan('VIP', 800)">
+                            <span class="popular-badge">Популярное</span>
+                            <h4>VIP</h4>
+                            <div class="price">800 ₽</div>
+                            <div class="period">30 дней</div>
+                            <ul>
+                                <li>✅ Всё от PRO</li>
+                                <li>📊 КБЖУ каждого блюда</li>
+                                <li>🎤 Голосовой ввод рецептов</li>                                <li>️ Озвучка рецептов голосом</li>
+                            </ul>
+                            <button class="select-plan-btn">Выбрать VIP</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script>
-        // Telegram WebApp
-        let tg;
-        try {
-            tg = window.Telegram.WebApp;
-            tg.ready();
-            tg.expand();
-            console.log('✅ Telegram WebApp готов');
-        } catch(e) {
-            console.error('❌ Ошибка Telegram:', e);
-            tg = null;
-        }
-
-        // ID пользователя
-        function getUserId() {
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
-                return tg.initDataUnsafe.user.id;
-            }
-            // Тестовый ID (замените на свой)
-            return 8043971654;
-        }
-
-        // Загрузка статуса пользователя
-        async function loadUser() {
-            const statusDiv = document.getElementById('status');
-            const userId = getUserId();
-            
-            try {
-                const response = await fetch(`/api/user/${userId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.hasSubscription) {
-                        statusDiv.innerHTML = `✨ Подписка ${data.subscription.plan_type} активна ✨`;
-                        statusDiv.className = 'status success';
-                    } else {
-                        statusDiv.innerHTML = `🎁 Бесплатно: осталось ${data.freeRecipesLeft} из 3 рецептов`;
-                        statusDiv.className = 'status';
-                    }
-                } else {
-                    statusDiv.innerHTML = '⚠️ Не удалось загрузить данные';
-                }
-            } catch(e) {
-                console.error('Load error:', e);
-                statusDiv.innerHTML = '⚠️ Ошибка соединения, но вы можете генерировать рецепты';
-            }
-        }
-
-        // Генерация рецепта
-        async function generateRecipe() {
-            const dish = document.getElementById('dish').value.trim();
-            const details = document.getElementById('details').value.trim();
-            const resultDiv = document.getElementById('result');
-            
-            if (!dish) {
-                alert('Напишите, что хотите приготовить');
-                return;
-            }
-            
-            resultDiv.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>👨‍🍳 Шеф готовит рецепт...</p>
-                </div>
-            `;
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tgId: getUserId(),
-                        query: dish,
-                        details: details,
-                        planType: 'FREE'
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success && data.recipe) {
-                    const r = data.recipe;
-                    resultDiv.innerHTML = `
-                        <div class="recipe">
-                            <h2>🍽 ${escapeHtml(r.title)}</h2>
-                            ${r.description ? `<p>${escapeHtml(r.description)}</p>` : ''}
-                            
-                            <h3>🥄 Ингредиенты:</h3>
-                            <ul>
-                                ${(r.ingredients || ['Ингредиенты не указаны']).map(i => `<li>${escapeHtml(i)}</li>`).join('')}
-                            </ul>
-                            
-                            <h3>🔥 Приготовление:</h3>
-                            <ol>
-                                ${(r.steps || ['Шаги не указаны']).map(s => `<li>${escapeHtml(s)}</li>`).join('')}
-                            </ol>
-                            
-                            ${r.tips ? `<h3>✨ Советы Шефа:</h3><p>${escapeHtml(r.tips)}</p>` : ''}
-                            
-                            <hr style="margin: 16px 0;">
-                            <p style="text-align: center; color: #888;">🍽️ Приятного аппетита!</p>
-                        </div>
-                    `;
-                    // Обновляем статус (уменьшился счетчик)
-                    await loadUser();
-                } else {
-                    resultDiv.innerHTML = `<div class="error">❌ Ошибка: ${data.error || 'Не удалось сгенерировать рецепт'}</div>`;
-                }
-            } catch(e) {
-                console.error('Generate error:', e);
-                resultDiv.innerHTML = `<div class="error">❌ Ошибка соединения с сервером. Проверьте интернет.</div>`;
-            }
-        }
-        
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        // Запуск
-        document.getElementById('cookBtn').addEventListener('click', generateRecipe);
-        loadUser();
-        
-        console.log('✅ Страница загружена, API URL:', window.location.origin);
-    </script>
+    <script src="app.js"></script>
 </body>
 </html>
