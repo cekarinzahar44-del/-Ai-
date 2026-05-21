@@ -10,8 +10,6 @@ const { Telegraf, Markup } = require('telegraf');
 const cron = require('node-cron');
 const { callGigaChat, getGigaToken } = require('./gigachat');
 const { transcribeVoice, generateVoice } = require('./voice');
-const WEBHOOK_URL =
-        'https://bot-1779392471-6640-zahar0304.bothost.tech/webhook';
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -379,7 +377,6 @@ app.post('/api/upload-receipt', upload.single('receipt'), async (req, res) => {
     }
     
     try {
-        // Сохраняем информацию о чеке
         const fileId = `receipt_${Date.now()}_${tgId}`;
         
         await pool.query(
@@ -388,7 +385,6 @@ app.post('/api/upload-receipt', upload.single('receipt'), async (req, res) => {
             [fileId, paymentId, tgId]
         );
         
-        // Уведомляем админа
         if (ADMIN_ID) {
             const user = await getUser(tgId);
             const caption = `🚨 Новая оплата #${paymentId}\n👤 ${user?.first_name || user?.username || tgId}\n💎 ${planType} | 💰 ${amount}₽\n📱 ID: ${tgId}`;
@@ -401,13 +397,6 @@ app.post('/api/upload-receipt', upload.single('receipt'), async (req, res) => {
             };
             
             try {
-                // Конвертируем buffer в base64 для отправки
-                const base64Image = req.file.buffer.toString('base64');
-                // В реальном приложении здесь нужно отправить фото админу
-                console.log(`📢 Admin notification: ${caption}`);
-                console.log(`📎 Receipt data length: ${base64Image.length}`);
-                
-                // Отправляем через бота
                 await bot.telegram.sendMessage(ADMIN_ID, caption, {
                     reply_markup: keyboard
                 });
@@ -443,7 +432,7 @@ app.get('/api/subscriptions/:tgId', async (req, res) => {
     const { tgId } = req.params;
     try {
         const { rows } = await pool.query(
-            `SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC`,
+            `SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY starts_at DESC`,
             [tgId]
         );
         res.json({ success: true, subscriptions: rows });
@@ -498,7 +487,7 @@ function setupCron() {
                 const days = Math.ceil((new Date(sub.expires_at) - new Date()) / 86400000);
                 try {
                     await bot.telegram.sendMessage(sub.tg_id,
-                        `⏰ <b>Подпиخة "${sub.plan_type}" истекает через ${days} ${getDaysWord(days)}</b>\n\n` +
+                        `⏰ <b>Подписка "${sub.plan_type}" истекает через ${days} ${getDaysWord(days)}</b>\n\n` +
                         `Продлите подписку, чтобы продолжить пользоваться всеми возможностями бота!`,
                         { parse_mode: 'HTML' }
                     );
@@ -515,7 +504,6 @@ function setupCron() {
         }
     }, { timezone: 'Europe/Moscow' });
     
-    // Очистка старых pending платежей каждые 3 дня
     cron.schedule('0 3 */3 * *', async () => {
         console.log('⏰ [CRON] Очистка старых платежей...');
         try {
@@ -535,29 +523,7 @@ function getDaysWord(days) {
     return 'дней';
 }
 
-// ===== WEBHOOK ДЛЯ TELEGRAM BOT =====
-// Эндпоинт для вебхука бота
-app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
-    bot.handleUpdate(req.body, res);
-    res.sendStatus(200);
-});
-
-// Настройка вебхука при запуске
-async function setupWebhook() {
-    const webhookUrl = process.env.WEBHOOK_URL || `https://${process.env.HOSTNAME || 'localhost'}/webhook/${BOT_TOKEN}`;
-    
-    try {
-        await bot.telegram.setWebhook(webhookUrl);
-        console.log(`✅ Webhook set to: ${webhookUrl}`);
-    } catch (error) {
-        console.error('❌ Webhook setup failed:', error.message);
-        // Если не получилось установить вебхук, используем polling
-        console.log('🔄 Falling back to polling mode');
-        bot.launch();
-    }
-}
-
-// Обработчики бота (для админа и команд)
+// ===== ОБРАБОТЧИКИ БОТА =====
 bot.start(async (ctx) => {
     if (ctx.from.id === ADMIN_ID) {
         try {
@@ -592,8 +558,7 @@ bot.start(async (ctx) => {
         return;
     }
     
-    // Для обычных пользователей - отправляем ссылку на WebApp
-    const webAppUrl = process.env.WEBAPP_URL || `https://${process.env.HOSTNAME || 'localhost'}`;
+    const webAppUrl = `https://bot-1779392471-6640-zahar0304.bothost.tech`;
     
     await ctx.reply(
         `👨‍🍳 <b>Добро пожаловать в Шеф-Повар AI!</b>\n\n` +
@@ -783,7 +748,7 @@ bot.action(/^reject_(\d+)$/, async (ctx) => {
     }
 });
 
-// ===== ЗАПУСК =====
+// ===== ЗАПУСК (ТОЛЬКО POLLING MODE) =====
 async function start() {
     await initDB();
     setupCron();
@@ -791,13 +756,14 @@ async function start() {
     // Запускаем сервер
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);
-        console.log(`📱 WebApp available at http://localhost:${PORT}`);
-        console.log(`🤖 Bot: @${BOT_TOKEN.split(':')[0]}`);
+        console.log(`📱 WebApp available at https://bot-1779392471-6640-zahar0304.bothost.tech`);
+        console.log(`🤖 Bot polling mode active`);
         console.log(`👨‍💼 Admin ID: ${ADMIN_ID}`);
     });
     
-    // Настраиваем вебхук
-    await setupWebhook();
+    // Запускаем бота в polling mode (без вебхука)
+    bot.launch();
+    console.log('✅ Bot started in polling mode');
 }
 
 start().catch(err => {
