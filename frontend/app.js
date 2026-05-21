@@ -19,6 +19,7 @@ try {
         ready: () => {},
         sendData: () => {}
     };
+    showToast('Откройте приложение через Telegram', 'error');
 }
 
 // ===== API BASE =====
@@ -46,8 +47,8 @@ try {
 // DOM elements
 const recipeInput = document.getElementById('recipeInput');
 const generateBtn = document.getElementById('generateBtn');
-const voiceBtn = document.getElementById('voiceBtn');
-const detailsSection = document.getElementById('detailsSection');const detailsInput = document.getElementById('detailsInput');
+const voiceBtn = document.getElementById('voiceBtn');const detailsSection = document.getElementById('detailsSection');
+const detailsInput = document.getElementById('detailsInput');
 const submitDetailsBtn = document.getElementById('submitDetailsBtn');
 const loadingSection = document.getElementById('loadingSection');
 const recipeSection = document.getElementById('recipeSection');
@@ -95,8 +96,8 @@ function showRecipe() {
     if (welcomeSection) welcomeSection.style.display = 'none';
     if (detailsSection) detailsSection.style.display = 'none';
     if (favoritesSection) favoritesSection.style.display = 'none';
-    if (profileSection) profileSection.style.display = 'none';
-}
+    if (profileSection) profileSection.style.display = 'none';}
+
 function showFavorites() {
     if (favoritesSection) favoritesSection.style.display = 'block';
     if (recipeSection) recipeSection.style.display = 'none';
@@ -144,8 +145,8 @@ function getUserId() {
 async function getUserData() {
     try {
         const userId = getUserId();
-        
-        if (!userId) {            showToast('Ошибка авторизации', 'error');
+                if (!userId) {
+            showToast('Ошибка авторизации', 'error');
             currentUser = {
                 hasSubscription: false,
                 freeRecipesLeft: 3,
@@ -193,8 +194,8 @@ async function getUserData() {
             showToast('Ошибка загрузки: ' + error.message, 'error');
         }
         
-        currentUser = {
-            hasSubscription: false,            freeRecipesLeft: 3,
+        currentUser = {            hasSubscription: false,
+            freeRecipesLeft: 3,
             freeLimit: 3,
             canGenerate: true
         };
@@ -242,8 +243,8 @@ async function generateRecipe(query, details = '') {
             },
             body: JSON.stringify({
                 tgId: userId,
-                query: query,
-                details: details,                planType: currentUser.subscription?.plan_type || 'FREE'
+                query: query,                details: details,
+                planType: currentUser.subscription?.plan_type || 'FREE'
             }),
             signal: controller.signal
         });
@@ -291,8 +292,8 @@ async function generateRecipe(query, details = '') {
                 'Соль, перец по вкусу',
                 'Растительное масло'
             ],
-            time: '30-40 минут',
-            steps: [                `Подготовьте все ингредиенты для ${query}.`,
+            time: '30-40 минут',            steps: [
+                `Подготовьте все ингредиенты для ${query}.`,
                 'Следуйте инструкции приготовления.',
                 'Подавайте горячим, украсив зеленью.',
                 'Приятного аппетита!'
@@ -340,8 +341,8 @@ function displayRecipe(recipe) {
             const div = document.createElement('div');
             div.className = 'step-item';
             div.innerHTML = `
-                <span class="step-number">${idx + 1}</span>
-                <span class="step-text">${escapeHtml(step)}</span>            `;
+                <span class="step-number">${idx + 1}</span>                <span class="step-text">${escapeHtml(step)}</span>
+            `;
             stepsList.appendChild(div);
         });
     }
@@ -389,8 +390,8 @@ function displayRecipe(recipe) {
         nutritionBlock.style.display = 'none';
     }
 
-    const isFavorite = favorites.some(f => f.title === recipe.title);
-    const favBtn = document.getElementById('favoriteBtn');    if (favBtn) {
+    const isFavorite = favorites.some(f => f.title === recipe.title);    const favBtn = document.getElementById('favoriteBtn');
+    if (favBtn) {
         if (isFavorite) {
             favBtn.classList.add('active');
         } else {
@@ -438,8 +439,8 @@ function renderFavorites() {
 
     if (!favorites.length) {
         container.innerHTML = '';
-        if (empty) empty.style.display = 'block';
-        return;    }
+        if (empty) empty.style.display = 'block';        return;
+    }
 
     if (empty) empty.style.display = 'none';
 
@@ -487,8 +488,8 @@ function showSubscriptionModal() {
     if (modal) modal.style.display = 'flex';
 }
 
-function hideSubscriptionModal() {
-    const modal = document.getElementById('subscriptionModal');    if (modal) modal.style.display = 'none';
+function hideSubscriptionModal() {    const modal = document.getElementById('subscriptionModal');
+    if (modal) modal.style.display = 'none';
 }
 
 // Share recipe
@@ -536,8 +537,8 @@ async function startRecording() {
                 const timeoutId = setTimeout(() => controller.abort(), 30000);
                 
                 const response = await fetch(`${API_BASE}/api/transcribe`, {
-                    method: 'POST',
-                    body: formData,                    signal: controller.signal
+                    method: 'POST',                    body: formData,
+                    signal: controller.signal
                 });
                 
                 clearTimeout(timeoutId);
@@ -585,8 +586,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             item.classList.add('active');
             const page = item.dataset.page;
             if (page === 'home') showWelcome();
-            if (page === 'favorites') showFavorites();
-            if (page === 'profile') showProfile();        });
+            if (page === 'favorites') showFavorites();            if (page === 'profile') showProfile();
+        });
     });
 
     // Generate button
@@ -634,20 +635,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // New recipe button
     document.getElementById('newRecipeBtn')?.addEventListener('click', () => {
         showWelcome();
-        if (recipeInput) recipeInput.value = '';
-        currentRecipe = null;    });
+        if (recipeInput) recipeInput.value = '';        currentRecipe = null;
+    });
 
     // Upgrade button
     document.getElementById('upgradeBtn')?.addEventListener('click', showSubscriptionModal);
 
     // Modal close
-    document.querySelector('.close-modal')?.addEventListener('click', hideSubscriptionModal);
-    document.querySelector('.modal-overlay')?.addEventListener('click', hideSubscriptionModal);
-
-    // Theme adaptation
-    if (tg && tg.colorScheme === 'dark') {
-        document.body.classList.add('dark');
-    }
-    
-    console.log('✅ App.js loaded successfully');
-});
+    document.querySelector('.close-modal')?.addEventListener('click',',
