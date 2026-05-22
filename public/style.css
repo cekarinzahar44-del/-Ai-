@@ -1406,3 +1406,34 @@ input[type="file"]::file-selector-button {
     padding: 12px 14px;
   }
 }
+
+/* Стили для печати */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #weekmenu-text,
+  #weekmenu-text * {
+    visibility: visible;
+  }
+  #weekmenu-text {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white;
+    color: black;
+    padding: 20px;
+  }
+  .header {
+    background: #667eea !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .day {
+    page-break-inside: avoid;
+  }
+  .meal-title {
+    page-break-after: avoid;
+  }
+}
