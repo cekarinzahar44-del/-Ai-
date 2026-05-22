@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Шеф-Повар AI</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- HOME -->
+    <section id="screen-home" class="screen active">
+      <header class="app-header">
+        <h1>👨‍🍳 Шеф-Повар</h1>
+        <div id="user-badge" class="badge">FREE</div>
+      </header>
+
+      <div class="hero">
+        <div class="hero-emoji">🍳</div>
+        <h2>Что будем готовить?</h2>
+        <p class="hint">Назови блюдо голосом или напиши</p>
+      </div>
+
+      <div class="input-area">
+        <textarea id="dish-input" placeholder="Например: паста карбонара" rows="2"></textarea>
+        <div class="input-actions">
+          <button id="btn-voice" class="icon-btn" title="Голос">🎤</button>
+          <button id="btn-send" class="primary-btn">Найти рецепт</button>
+        </div>
+      </div>
+
+      <div class="quick-chips">
+        <span class="chip" data-dish="Борщ">🥣 Борщ</span>
+        <span class="chip" data-dish="Паста">🍝 Паста</span>
+        <span class="chip" data-dish="Салат Цезарь">🥗 Цезарь</span>
+        <span class="chip" data-dish="Омлет">🍳 Омлет</span>
+        <span class="chip" data-dish="Плов">🍚 Плов</span>
+        <span class="chip" data-dish="Котлеты">🍖 Котлеты</span>
+      </div>
+
+      <div class="status-bar">
+        <span id="free-count">Загрузка...</span>
+      </div>
+      <div class="profile-link" onclick="showScreen('profile')">👤 Мой профиль</div>
+    </section>
+
+    <!-- DETAILS -->
+    <section id="screen-details" class="screen">      <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+      <h2>🍽 Уточни детали</h2>
+      <div class="form-group">
+        <label>Порций</label>
+        <input type="number" id="portions" value="2" min="1" max="20">
+      </div>
+      <div class="form-group">
+        <label>Предпочтения</label>
+        <div class="pref-chips">
+          <span class="pref" data-pref="ПП">🥗 ПП</span>
+          <span class="pref" data-pref="Быстро">🔥 Быстро</span>
+          <span class="pref" data-pref="Бюджетно">💰 Бюджет</span>
+          <span class="pref" data-pref="Вегетарианское">🌱 Веган</span>
+          <span class="pref" data-pref="Острое">🌶️ Острое</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Доп. пожелания</label>
+        <textarea id="extra-details" rows="2" placeholder="Без лука, поострее..."></textarea>
+      </div>
+      <button id="btn-generate" class="primary-btn full">👨‍🍳 Готовим!</button>
+    </section>
+
+    <!-- LOADING -->
+    <section id="screen-loading" class="screen">
+      <div class="loader">
+        <div class="loader-emoji">👨‍🍳</div>
+        <p>Шеф готовит рецепт...</p>
+      </div>
+    </section>
+
+    <!-- RECIPE -->
+    <section id="screen-recipe" class="screen">
+      <header class="recipe-header">
+        <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+        <div class="recipe-actions">
+          <button id="btn-voice-nav" class="icon-btn" title="Голосовое управление">🎤</button>
+          <button id="btn-voice-read" class="icon-btn" title="Озвучить шаг">🔊</button>
+        </div>
+      </header>
+      <div class="voice-hint">
+        💡 Скажи: <b>"далее"</b>, <b>"назад"</b>, <b>"повтори"</b>, <b>"стоп"</b>
+      </div>
+      <h2 id="recipe-title"></h2>
+      <div class="step-card">
+        <div class="step-number">Шаг <span id="step-current">1</span> из <span id="step-total">5</span></div>
+        <div id="step-text" class="step-text"></div>
+      </div>
+      <div class="step-nav">
+        <button id="btn-prev" class="nav-btn">⬅️</button>        <button id="btn-next" class="nav-btn primary">Далее ➡️</button>
+      </div>
+      <button id="btn-full-recipe" class="ghost-btn full">📜 Весь рецепт</button>
+    </section>
+
+    <!-- SUBSCRIPTION -->
+    <section id="screen-subscription" class="screen">
+      <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+      <h2>💎 Тарифы</h2>
+      <p class="hint">Пробный лимит закончился</p>
+      <div class="plan-card">
+        <div class="plan-icon">💳</div>
+        <h3>PRO</h3>
+        <div class="price">500₽<span>/мес</span></div>
+        <ul>
+          <li>Безлимит рецептов</li>
+          <li>Голосовое управление</li>
+          <li>Приоритетная генерация</li>
+        </ul>
+        <button class="primary-btn full" onclick="buyPlan('PRO')">Купить</button>
+      </div>
+      <div class="plan-card vip">
+        <div class="plan-icon">💎</div>
+        <div class="vip-badge">TOP</div>
+        <h3>VIP</h3>
+        <div class="price">800₽<span>/мес</span></div>
+        <ul>
+          <li>Всё из PRO</li>
+          <li>ИИ диетолог</li>
+          <li>КБЖУ на порцию</li>
+          <li>Меню на неделю</li>
+        </ul>
+        <button class="primary-btn full gold" onclick="buyPlan('VIP')">Купить</button>
+      </div>
+    </section>
+
+    <!-- PAYMENT -->
+    <section id="screen-payment" class="screen">
+      <button class="back-btn" onclick="showScreen('subscription')">← Назад</button>
+      <h2>💳 Оплата</h2>
+      <div class="payment-info">
+        <p class="pay-title">Переведите по СБП:</p>
+        <div class="sbp-block">
+          <div>📱 <code id="sbp-phone"></code></div>
+          <div>👤 <span id="sbp-recipient"></span></div>
+          <div class="pay-amount">💰 <b id="pay-amount"></b> ₽</div>
+        </div>
+        <p class="hint">📸 Загрузите скриншот чека:</p>
+        <input type="file" id="receipt-file" accept="image/*">
+        <button id="btn-upload-receipt" class="primary-btn full">📤 Отправить чек</button>      </div>
+    </section>
+
+    <!-- VIP: WEEK MENU -->
+    <section id="screen-weekmenu" class="screen">
+      <button class="back-btn" onclick="showScreen('profile')">← Назад</button>
+      <h2>📅 Меню на неделю</h2>
+      <div class="vip-feature-card">
+        <div class="vip-icon">🗓</div>
+        <h3>Персональное меню</h3>
+        <p class="hint">ИИ составит меню на 7 дней с учётом твоих предпочтений</p>
+        <div class="form-group">
+          <label>Предпочтения</label>
+          <textarea id="weekmenu-prefs" rows="3" placeholder="Без мяса, бюджетно, на 2 человек..."></textarea>
+        </div>
+        <button id="btn-generate-weekmenu" class="primary-btn full">✨ Составить меню</button>
+      </div>
+      <div id="weekmenu-result" class="step-card" style="display:none;">
+        <div id="weekmenu-text" class="step-text"></div>
+      </div>
+    </section>
+
+    <!-- VIP: DIET -->
+    <section id="screen-diet" class="screen">
+      <button class="back-btn" onclick="showScreen('profile')">← Назад</button>
+      <h2>🥗 ИИ Диетолог</h2>
+      <div class="vip-feature-card">
+        <div class="vip-icon">👨‍⚕️</div>
+        <h3>Персональная консультация</h3>
+        <p class="hint">Задай вопрос о питании, КБЖУ, диетах</p>
+        <div class="form-group">
+          <label>Твой вопрос</label>
+          <textarea id="diet-question" rows="3" placeholder="Сколько калорий мне нужно?"></textarea>
+        </div>
+        <button id="btn-ask-diet" class="primary-btn full">💬 Спросить</button>
+      </div>
+      <div id="diet-result" class="step-card" style="display:none;">
+        <div id="diet-text" class="step-text"></div>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section id="screen-profile" class="screen">
+      <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+      <h2>👤 Профиль</h2>
+      <div class="profile-card">
+        <div class="profile-avatar" id="profile-avatar">👤</div>
+        <div class="profile-name" id="profile-name"></div>
+        <div class="profile-username" id="profile-username"></div>
+      </div>      <div class="profile-stats">
+        <div class="stat-item">
+          <div class="stat-value" id="stat-recipes">0</div>
+          <div class="stat-label">Рецептов</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-plan">FREE</div>
+          <div class="stat-label">Тариф</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-expires">—</div>
+          <div class="stat-label">До</div>
+        </div>
+      </div>
+      <div class="profile-actions">
+        <button class="ghost-btn full" onclick="showScreen('weekmenu')">📅 Меню на неделю</button>
+        <button class="ghost-btn full" onclick="showScreen('diet')">🥗 Диетолог</button>
+        <button class="ghost-btn full" onclick="showScreen('subscription')">💎 Подписка</button>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
