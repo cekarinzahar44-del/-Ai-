@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Админ-панель | Шеф-Повар AI</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <div id="admin-app">
+    
+    <!-- Лоадер -->
+    <div id="loader" class="loader-screen">
+      <div class="loader-emoji">👨‍💼</div>
+      <p>Загружаем админ-панель...</p>
+    </div>
+
+    <!-- Ошибка доступа -->
+    <div id="access-denied" class="error-screen" style="display:none;">
+      <div class="error-emoji">🔒</div>
+      <h2>Доступ запрещён</h2>
+      <p>Эта панель доступна только администратору</p>
+    </div>
+
+    <!-- Главная панель -->
+    <div id="main-panel" style="display:none;">
+      <header class="admin-header">
+        <h1>👨‍💼 Админ-панель</h1>
+        <div class="admin-user">
+          <span id="admin-name">Admin</span>
+          <button id="btn-refresh" class="icon-btn-sm" title="Обновить">🔄</button>
+        </div>
+      </header>
+
+      <!-- Навигация -->
+      <nav class="admin-nav">
+        <button class="nav-btn active" data-tab="dashboard">📊 Дашборд</button>
+        <button class="nav-btn" data-tab="payments">💳 Платежи</button>
+        <button class="nav-btn" data-tab="users">👥 Юзеры</button>
+        <button class="nav-btn" data-tab="subscriptions">💎 Подписки</button>
+        <button class="nav-btn" data-tab="export">📥 Экспорт</button>
+      </nav>
+
+      <!-- TAB: DASHBOARD -->
+      <section id="tab-dashboard" class="tab-content active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">👥</div>            <div class="stat-info">
+              <div class="stat-number" id="stat-total-users">0</div>
+              <div class="stat-label">Всего юзеров</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🆕</div>
+            <div class="stat-info">
+              <div class="stat-number" id="stat-users-today">0</div>
+              <div class="stat-label">Новых сегодня</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">💎</div>
+            <div class="stat-info">
+              <div class="stat-number" id="stat-active-subs">0</div>
+              <div class="stat-label">Активных подписок</div>
+            </div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-icon">⏳</div>
+            <div class="stat-info">
+              <div class="stat-number" id="stat-pending">0</div>
+              <div class="stat-label">Ожидают одобрения</div>
+            </div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-icon">💰</div>
+            <div class="stat-info">
+              <div class="stat-number" id="stat-revenue-total">0₽</div>
+              <div class="stat-label">Выручка всего</div>
+            </div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-icon">📈</div>
+            <div class="stat-info">
+              <div class="stat-number" id="stat-revenue-month">0₽</div>
+              <div class="stat-label">За 30 дней</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Графики -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>📈 Регистрации (30 дней)</h3>
+            <canvas id="chart-registrations"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>💰 Выручка (30 дней)</h3>            <canvas id="chart-revenue"></canvas>
+          </div>
+        </div>
+
+        <!-- Истекающие подписки -->
+        <div class="section-card">
+          <h3>⏰ Истекают в ближайшие 7 дней</h3>
+          <div id="expiring-list" class="data-list"></div>
+        </div>
+
+        <!-- Распределение тарифов -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>📊 Распределение тарифов</h3>
+            <canvas id="chart-plans"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>💎 PRO vs VIP</h3>
+            <div class="plan-stats">
+              <div class="plan-stat">
+                <div class="plan-name">PRO</div>
+                <div class="plan-count" id="stat-pro-count">0</div>
+                <div class="plan-price" id="stat-pro-revenue">0₽</div>
+              </div>
+              <div class="plan-stat vip">
+                <div class="plan-name">VIP</div>
+                <div class="plan-count" id="stat-vip-count">0</div>
+                <div class="plan-price" id="stat-vip-revenue">0₽</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: PAYMENTS -->
+      <section id="tab-payments" class="tab-content">
+        <div class="tab-header">
+          <h2>💳 Все платежи</h2>
+          <div class="filters">
+            <select id="filter-status">
+              <option value="all">Все статусы</option>
+              <option value="pending">⏳ Ожидают</option>
+              <option value="approved">✅ Одобрены</option>
+              <option value="rejected">❌ Отклонены</option>
+            </select>
+            <select id="filter-plan">
+              <option value="all">Все тарифы</option>
+              <option value="PRO">PRO</option>
+              <option value="VIP">VIP</option>
+            </select>          </div>
+        </div>
+        <div id="payments-list" class="data-list"></div>
+        <div id="payments-pagination" class="pagination"></div>
+      </section>
+
+      <!-- TAB: USERS -->
+      <section id="tab-users" class="tab-content">
+        <div class="tab-header">
+          <h2>👥 Все пользователи</h2>
+          <div class="filters">
+            <input type="text" id="search-users" placeholder="🔍 Поиск по имени/username/id...">
+            <select id="filter-user-plan">
+              <option value="all">Все</option>
+              <option value="FREE">FREE</option>
+              <option value="PRO">PRO</option>
+              <option value="VIP">VIP</option>
+            </select>
+          </div>
+        </div>
+        <div id="users-list" class="data-list"></div>
+        <div id="users-pagination" class="pagination"></div>
+      </section>
+
+      <!-- TAB: SUBSCRIPTIONS -->
+      <section id="tab-subscriptions" class="tab-content">
+        <div class="tab-header">
+          <h2>💎 Все подписки</h2>
+        </div>
+        <div id="subs-list" class="data-list"></div>
+      </section>
+
+      <!-- TAB: EXPORT -->
+      <section id="tab-export" class="tab-content">
+        <div class="tab-header">
+          <h2>📥 Экспорт данных</h2>
+        </div>
+        <div class="export-grid">
+          <div class="export-card">
+            <div class="export-icon">👥</div>
+            <h3>Пользователи</h3>
+            <p>Все пользователи с тарифами и датами</p>
+            <button class="primary-btn" onclick="exportData('users')">📥 Скачать Excel</button>
+          </div>
+          <div class="export-card">
+            <div class="export-icon">💳</div>
+            <h3>Платежи</h3>
+            <p>Вся история платежей со статусами</p>
+            <button class="primary-btn" onclick="exportData('payments')">📥 Скачать Excel</button>
+          </div>          <div class="export-card">
+            <div class="export-icon">💎</div>
+            <h3>Подписки</h3>
+            <p>История всех подписок</p>
+            <button class="primary-btn" onclick="exportData('subscriptions')">📥 Скачать Excel</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Модальное окно пользователя -->
+    <div id="user-modal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modal-user-name">Пользователь</h2>
+          <button class="modal-close" onclick="closeUserModal()">✕</button>
+        </div>
+        <div id="modal-user-content" class="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Модальное окно чека -->
+    <div id="receipt-modal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Чек #<span id="receipt-id"></span></h2>
+          <button class="modal-close" onclick="closeReceiptModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <img id="receipt-image" src="" alt="Чек">
+          <div class="receipt-actions">
+            <button class="primary-btn success" onclick="approvePayment()">✅ Одобрить</button>
+            <button class="primary-btn danger" onclick="rejectPayment()">❌ Отклонить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/admin.js"></script>
+</body>
+</html>
