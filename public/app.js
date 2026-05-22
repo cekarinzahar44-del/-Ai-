@@ -475,3 +475,17 @@ window.addEventListener('load', async () => {
   // Инициализация приложения
   await init();
 });
+
+// ===== PREMIUM UI ENHANCEMENTS =====
+
+// Update step progress bar
+const _origRender = RecipeManager.render.bind(RecipeManager);
+RecipeManager.render = function() {
+  _origRender();
+  if (!this.current) return;
+  const pct = Math.round(((this.step + 1) / this.current.total) * 100);
+  const fill = document.getElementById('step-progress-fill');
+  const pctEl = document.getElementById('step-percent');
+  if (fill) fill.style.width = pct + '%';
+  if (pctEl) pctEl.textContent = pct + '%';
+};
