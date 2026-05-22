@@ -12,7 +12,8 @@ module.exports = (bot, pool, ADMIN_ID) => {
 
       await pool.query(`UPDATE subscriptions SET is_active=FALSE WHERE user_id=$1`, [payment.user_id]);
       await pool.query(
-        `INSERT INTO subscriptions (user_id, is_active, expires_at, plan_type) VALUES ($1, TRUE, $2, $3)`,
+        `INSERT INTO subscriptions (user_id, is_active, expires_at, plan_type) 
+         VALUES ($1, TRUE, $2, $3)`,
         [payment.user_id, expiresAt, payment.plan_type]
       );
       await pool.query(`UPDATE users SET free_recipes_used=0 WHERE tg_id=$1`, [payment.user_id]);
