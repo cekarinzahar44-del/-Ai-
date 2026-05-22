@@ -397,15 +397,45 @@ document.getElementById('btn-upload-receipt').addEventListener('click', async ()
 });
 
 // ===== VIP: WEEK MENU =====
+// ===== VIP: WEEK MENU =====
 document.getElementById('btn-generate-weekmenu').addEventListener('click', async () => {
   const prefs = document.getElementById('weekmenu-prefs').value;
   const btn = document.getElementById('btn-generate-weekmenu');
+  const originalText = btn.textContent;
+  
   btn.disabled = true;
-  btn.textContent = '⏳ Составляю...';
+  btn.innerHTML = '<span class="loading-spinner"></span> Шеф-повар готовит меню...';
+  tg?.HapticFeedback?.impactOccurred('medium');
+  
   try {
     const data = await API.generateWeekMenu(prefs);
-    document.getElementById('weekmenu-text').innerHTML = data.menu.replace(/\n/g, '<br>');
+    
+    // Преобразуем HTML в красивый формат
+    const menuHtml = data.menu
+      .replace(/\n/g, '<br>')
+      .replace(/📅\s*/g, '<div class="week-day-header">📅 ')
+      .replace(/(<br>){3,}/g, '<br><br>')
+      .replace(/(ДЕНЬ\s*\d+)/gi, (match) => `</div><div class="week-day-header">${match}`);
+    
+    const weekmenuText = document.getElementById('weekmenu-text');
+    weekmenuText.innerHTML = `
+      <div class="weekmenu-header-card">
+        <div class="weekmenu-title">✨ Персональное меню</div>
+        <div class="weekmenu-subtitle">Составлено специально для вас</div>
+        <div class="weekmenu-date">${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+      </div>
+      <div class="weekmenu-body">${menuHtml}</div>
+    `;
+    
     document.getElementById('weekmenu-result').style.display = 'block';
+    
+    // Прокрутка к результату
+    setTimeout(() => {
+      document.getElementById('weekmenu-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    
+    tg?.HapticFeedback?.notificationOccurred('success');
+    
   } catch (e) {
     console.error('Week menu error:', e);
     if (e.message.includes('Только для VIP')) {
@@ -414,11 +444,173 @@ document.getElementById('btn-generate-weekmenu').addEventListener('click', async
     } else {
       alert('Ошибка: ' + e.message);
     }
+    tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '✨ Составить меню';
+    btn.disabled = false;    btn.innerHTML = originalText;
   }
 });
+
+// ===== СКАЧАТЬ PDF =====
+document.getElementById('btn-download-weekmenu').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-download-weekmenu');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Создаём PDF...';
+  
+  try {
+    const element = document.getElementById('weekmenu-text');
+    
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `menu-${new Date().toISOString().split('T')[0]}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#0a0a0f'
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait' 
+      },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+    
+    await html2pdf().set(opt).from(element).save();
+    
+    tg?.HapticFeedback?.notificationOccurred('success');
+    toast('📄 PDF сохранён!');
+    
+  } catch (e) {
+    console.error('PDF error:', e);
+    alert('Ошибка создания PDF: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+});
+
+// ===== ПЕЧАТЬ =====
+document.getElementById('btn-print-weekmenu').addEventListener('click', () => {
+  const printContent = document.getElementById('weekmenu-text').innerHTML;
+  const printWindow = window.open('', '_blank');  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Меню на неделю</title>
+      <style>
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          padding: 20px;
+          line-height: 1.6;
+          color: #1a1a24;
+          max-width: 800px;
+          margin: 0 auto;
+        }
+        .weekmenu-header-card {
+          text-align: center;
+          padding: 30px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border-radius: 16px;
+          margin-bottom: 30px;
+        }
+        .weekmenu-title { font-size: 28px; font-weight: 800; }
+        .weekmenu-subtitle { font-size: 16px; opacity: 0.9; margin-top: 8px; }
+        .weekmenu-date { font-size: 14px; opacity: 0.8; margin-top: 8px; }
+        .week-day-header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-weight: 700;
+          font-size: 18px;
+          margin: 20px 0 12px;
+          page-break-after: avoid;
+        }
+        b { color: #667eea; }
+        h2 { font-size: 28px; margin-bottom: 16px; }
+        @media print {
+          .week-day-header { page-break-before: auto; }
+          body { padding: 0; }
+        }
+      </style>
+    </head>
+    <body>${printContent}</body>
+    </html>
+  `);
+  printWindow.document.close();
+  setTimeout(() => {
+    printWindow.print();    printWindow.close();
+  }, 500);
+});
+
+// ===== ПОДЕЛИТЬСЯ =====
+document.getElementById('btn-share-weekmenu').addEventListener('click', async () => {
+  const text = document.getElementById('weekmenu-text').innerText;
+  
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'Моё меню на неделю от Шеф-Повар AI',
+        text: text.substring(0, 1000) + '...\n\n📱 Составлено в приложении Шеф-Повар AI'
+      });
+    } catch (e) {
+      console.log('Share cancelled');
+    }
+  } else {
+    // Fallback: копируем в буфер
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('📋 Скопировано в буфер!');
+      tg?.HapticFeedback?.notificationOccurred('success');
+    } catch (e) {
+      alert('Не удалось скопировать');
+    }
+  }
+});
+
+// ===== TOAST (если ещё нет) =====
+function toast(message, type = 'success') {
+  const existing = document.querySelector('.toast-msg');
+  if (existing) existing.remove();
+  
+  const el = document.createElement('div');
+  el.className = `toast-msg toast-${type}`;
+  el.textContent = message;
+  el.style.cssText = `
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 14px 24px;
+    border-radius: 16px;
+    font-weight: 600;
+    z-index: 9999;
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.4);
+    animation: slideUpToast 0.3s;  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// Добавляем CSS для toast
+if (!document.getElementById('toast-styles')) {
+  const style = document.createElement('style');
+  style.id = 'toast-styles';
+  style.textContent = `
+    @keyframes slideUpToast {
+      from { transform: translate(-50%, 100px); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 
 // ===== VIP: DIET =====
 document.getElementById('btn-ask-diet').addEventListener('click', async () => {
