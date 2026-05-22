@@ -1,4 +1,3 @@
-// BotHost: отключаем предупреждения о самоподписанных сертификатах
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 require('dotenv').config();
 
@@ -88,42 +87,31 @@ global.sendPhotoToAdmin = async (filePath, caption, keyboard) => {
   }
 };
 
-// /start
+// /start - ОДИНАКОВЫЙ для всех (включая админа)
 bot.start(async (ctx) => {
-  if (ctx.from.id === ADMIN_ID) {
-    const { Markup } = require('telegraf');
-    try {
-      const { rows: stats } = await pool.query(`
-        SELECT 
-          (SELECT COUNT(*) FROM users) as users,
-          (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE) as subs,          (SELECT COUNT(*) FROM payments WHERE status='pending') as pending
-      `);
-      const msg = `👨‍💼 <b>Панель администратора</b>\n\n` +
-        `📊 <b>Статистика:</b>\n` +
-        `• 👥 Пользователей: ${stats[0].users}\n` +
-        `• 💎 Активных подписок: ${stats[0].subs}\n` +
-        `• ⏳ Ожидающих оплат: ${stats[0].pending}\n\n` +
-        `💳 Одобрение оплат — через кнопки под фото чека в этом чате.`;
-
-      await ctx.reply(msg, {
-        parse_mode: 'HTML',
-        reply_markup: Markup.keyboard([
-          ['📋 Ожидающие оплаты', '📥 Экспорт подписок'],
-          ['📊 Статистика', 'ℹ️ Помощь']
-        ]).resize()
-      });
-    } catch (e) {
-      ctx.reply('❌ Ошибка: ' + e.message);
-    }
-    return;
-  }
-
-  // Обычный пользователь
   await pool.query(
     `INSERT INTO users (tg_id, username, first_name, free_recipes_used) 
      VALUES ($1,$2,$3,0) ON CONFLICT (tg_id) DO NOTHING`,
     [ctx.from.id, ctx.from.username, ctx.from.first_name]
   );
+
+  // Кнопки для всех
+  const buttons = [    [{ text: '🚀 Открыть Шеф-Повар', web_app: { url: MINI_APP_URL } }]
+  ];
+
+  // Админу добавляем кнопку веб-админки
+  if (ctx.from.id === ADMIN_ID && MINI_APP_URL) {
+    buttons.push([
+      { text: '👨‍💼 Открыть Админку', web_app: { url: `${MINI_APP_URL}/admin.html` } }
+    ]);
+    await ctx.reply(
+      '👨‍💼 <b>Привет, Админ!</b>\n\n' +
+      '🍳 Открой Шеф-Повар для теста\n' +
+      '📊 Или зайди в веб-админку для управления',
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }
+    );
+    return;
+  }
 
   await ctx.reply(
     '👨‍🍳 <b>Шеф-Повар AI</b>\n\n' +
@@ -131,11 +119,7 @@ bot.start(async (ctx) => {
     '👇 Открой приложение и начни готовить:',
     {
       parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '🚀 Открыть Шеф-Повар', web_app: { url: MINI_APP_URL } }
-        ]]
-      }
+      reply_markup: { inline_keyboard: buttons }
     }
   );
 });
@@ -145,7 +129,8 @@ async function start() {
   try {
     await pool.query('SELECT 1');
     console.log('✅ PostgreSQL подключен');
-  } catch (err) {    console.error('❌ БД ошибка:', err.message);
+  } catch (err) {
+    console.error('❌ БД ошибка:', err.message);
     process.exit(1);
   }
 
@@ -154,15 +139,13 @@ async function start() {
     `CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       tg_id BIGINT UNIQUE NOT NULL,
-      username TEXT,
-      first_name TEXT,
+      username TEXT, first_name TEXT,
       free_recipes_used INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS subscriptions (
       id SERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES users(tg_id) ON DELETE CASCADE,
-      starts_at TIMESTAMP DEFAULT NOW(),
+      user_id BIGINT REFERENCES users(tg_id) ON DELETE CASCADE,      starts_at TIMESTAMP DEFAULT NOW(),
       expires_at TIMESTAMP NOT NULL,
       is_active BOOLEAN DEFAULT TRUE,
       plan_type VARCHAR(10) DEFAULT 'PRO'
@@ -180,120 +163,28 @@ async function start() {
   for (const q of tables) await pool.query(q);
   console.log('✅ Таблицы созданы/проверены');
 
-  // ===== МИГРАЦИИ (исправление старых схем) =====
+  // ===== МИГРАЦИИ =====
   const migrations = [
-    // 1. Переименование старой колонки receipt_file_id → receipt_file_path
-    `DO $$ 
-     BEGIN
-       IF EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'payments' AND column_name = 'receipt_file_id'
-       ) AND NOT EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'payments' AND column_name = 'receipt_file_path'
-       ) THEN
-         ALTER TABLE payments RENAME COLUMN receipt_file_id TO receipt_file_path;
-         RAISE NOTICE 'Renamed receipt_file_id → receipt_file_path';
-       END IF;     END $$;`,
-    
-    // 2. Добавление receipt_file_path если её нет вообще
-    `DO $$
-     BEGIN
-       IF NOT EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'payments' AND column_name = 'receipt_file_path'
-       ) THEN
-         ALTER TABLE payments ADD COLUMN receipt_file_path TEXT;
-         RAISE NOTICE 'Added column receipt_file_path';
-       END IF;
-     END $$;`,
-    
-    // 3. Делаем колонку nullable
+    `DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='receipt_file_id')
+      AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='receipt_file_path') THEN
+        ALTER TABLE payments RENAME COLUMN receipt_file_id TO receipt_file_path;
+      END IF;
+    END $$;`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='receipt_file_path') THEN
+        ALTER TABLE payments ADD COLUMN receipt_file_path TEXT;
+      END IF;
+    END $$;`,
     `ALTER TABLE payments ALTER COLUMN receipt_file_path DROP NOT NULL`,
-    
-    // 4. Удаляем устаревшие колонки из payments
-    `DO $$
-     BEGIN
-       IF EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'payments' AND column_name = 'approved_by'
-       ) THEN
-         ALTER TABLE payments DROP COLUMN approved_by;
-         RAISE NOTICE 'Dropped column approved_by';
-       END IF;
-       IF EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'payments' AND column_name = 'approved_at'
-       ) THEN
-         ALTER TABLE payments DROP COLUMN approved_at;
-         RAISE NOTICE 'Dropped column approved_at';
-       END IF;
-     END $$;`,
-    
-    // 5. Удаляем устаревшую колонку из subscriptions
-    `DO $$
-     BEGIN
-       IF EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'subscriptions' AND column_name = 'payment_receipt_id'
-       ) THEN
-         ALTER TABLE subscriptions DROP COLUMN payment_receipt_id;
-         RAISE NOTICE 'Dropped column payment_receipt_id';
-       END IF;
-     END $$;`,
-    
-    // 6. Добавляем is_banned в users если нет
-    `DO $$     BEGIN
-       IF NOT EXISTS (
-         SELECT 1 FROM information_schema.columns 
-         WHERE table_name = 'users' AND column_name = 'is_banned'
-       ) THEN
-         ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT FALSE;
-         RAISE NOTICE 'Added column is_banned to users';
-       END IF;
-     END $$;`
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_banned') THEN
+        ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT FALSE;
+      END IF;
+    END $$;`
   ];
-
-  let migrationsApplied = 0;
   for (const m of migrations) {
-    try {
-      await pool.query(m);
-      migrationsApplied++;
-    } catch (e) {
-      // Игнорируем ошибки "already exists" и подобные
-      if (!e.message.includes('already exists')) {
-        console.log('⚠️ Migration note:', e.message);
-      }
-    }
-  }
-  console.log(`✅ Миграции проверены (${migrationsApplied})`);
-
-  // ===== ПРОВЕРКА СХЕМЫ БД =====
-  try {
-    const { rows: paymentCols } = await pool.query(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_name = 'payments'
-    `);
-    const cols = paymentCols.map(r => r.column_name);
-    
-    const requiredCols = ['id', 'user_id', 'amount', 'receipt_file_path', 'status', 'plan_type', 'created_at'];
-    const missingCols = requiredCols.filter(c => !cols.includes(c));
-    
-    if (missingCols.length > 0) {
-      console.error('❌ КРИТИЧНО: отсутствуют колонки в payments:', missingCols);
-    } else {
-      console.log('✅ Схема БД корректна');
-    }
-
-    // Статистика таблиц
-    const { rows: counts } = await pool.query(`
-      SELECT 
-        (SELECT COUNT(*) FROM users) as users_count,
-        (SELECT COUNT(*) FROM subscriptions) as subs_count,
-        (SELECT COUNT(*) FROM payments) as payments_count
-    `);
-    console.log(`📊 В БД: ${counts[0].users_count} юзеров, ${counts[0].subs_count} подписок, ${counts[0].payments_count} платежей`);  } catch (e) {
-    console.error('⚠️ Ошибка проверки схемы:', e.message);
+    try { await pool.query(m); } catch (e) {}
   }
 
   // ===== ИНДЕКСЫ =====
@@ -303,16 +194,14 @@ async function start() {
     'CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)',
     'CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id)',
     'CREATE INDEX IF NOT EXISTS idx_subs_user ON subscriptions(user_id)'
-  ];
-  for (const q of indexes) await pool.query(q).catch(() => {});
+  ];  for (const q of indexes) await pool.query(q).catch(() => {});
 
-  // ===== CRON: уведомления об истечении подписок =====
+  // ===== CRON =====
   cron.schedule('0 10 * * *', async () => {
     try {
       const { rows } = await pool.query(
         `SELECT u.tg_id, s.expires_at, s.plan_type 
-         FROM subscriptions s 
-         JOIN users u ON s.user_id = u.tg_id 
+         FROM subscriptions s JOIN users u ON s.user_id = u.tg_id 
          WHERE s.is_active = TRUE AND s.expires_at BETWEEN NOW() AND NOW() + INTERVAL '3 days'`
       );
       for (const s of rows) {
@@ -326,27 +215,26 @@ async function start() {
     } catch (e) { console.error('CRON:', e); }
   }, { timezone: 'Europe/Moscow' });
 
-  // ===== ЗАГРУЗКА МОДУЛЕЙ =====
+  // ===== ЗАГРУЗКА МОДУЛЕЙ (только bot.js для approve/reject) =====
   require('./bot')(bot, pool, ADMIN_ID);
-  require('./admin-handlers')(bot, pool, ADMIN_ID);
+  // admin-handlers НЕ загружаем!
 
-  // ===== ЗАПУСК СЕРВЕРА + БОТА =====
+  // ===== ЗАПУСК =====
   app.listen(PORT, () => console.log(`🌐 Mini App: http://localhost:${PORT}`));
   await bot.launch({ dropPendingUpdates: true });
   const me = await bot.telegram.getMe();
   console.log(`🚀 Бот: @${me.username} | Admin: ${ADMIN_ID}`);
+  console.log(`🌐 Веб-админка: ${MINI_APP_URL}/admin.html`);
 
-  // Menu Button (слева от поля ввода)
+  // Menu Button (для всех пользователей)
   if (MINI_APP_URL) {
     bot.telegram.setChatMenuButton({
       menu_button: {
         type: 'web_app',
-        text: '🍳 Шеф-Повар',        web_app: { url: MINI_APP_URL }
+        text: '🍳 Шеф-Повар',
+        web_app: { url: MINI_APP_URL }
       }
     }).catch(() => {});
-    console.log(`🔗 Menu Button настроен: ${MINI_APP_URL}`);
-  } else {
-    console.warn('⚠️ MINI_APP_URL не задан — Menu Button не установлен');
   }
 
   process.once('SIGINT', () => { bot.stop('SIGINT'); pool.end(); });
@@ -355,5 +243,4 @@ async function start() {
 
 start().catch(err => {
   console.error('❌ Fatal:', err);
-  process.exit(1);
-});
+  process.exit(1);});
