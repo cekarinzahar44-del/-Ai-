@@ -18,7 +18,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `receipt_${Date.now()}_${Math.random().toString(36).slice(2,8)}${ext}`);
+    cb(null, `receipt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`);
   }
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
@@ -61,7 +61,7 @@ ${isVIP ? 'Добавь 📊 КБЖУ на порцию.' : ''}
 
 function parseSteps(fullText) {
   if (!fullText) return ['Текст рецепта не получен.'];
-  const stepRegex = /(?:Шаг\s*\d+[.:\s-])|(?:^\d+\.\s)/gim;
+  const stepRegex = /(?:Шаг\s*\d+[.:\s-])|(?:^\d+.\s)/gim;
   const parts = fullText.split(stepRegex).filter(p => p.trim().length > 5);
   if (parts.length >= 2) return parts.map(p => p.trim());
   return fullText.split(/\n\s*\n/).filter(p => p.trim().length > 10);
