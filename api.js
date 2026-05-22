@@ -6,9 +6,7 @@ const ExcelJS = require('exceljs');
 const { validateTelegramAuth } = require('./auth');
 const { callGigaChat } = require('./gigachat');
 const { transcribeVoice } = require('./stt');
-
 const router = express.Router();
-
 // ===== КОНСТАНТЫ =====
 const FREE_LIMIT = 3;
 const PRO_PRICE = 500;
@@ -16,11 +14,9 @@ const VIP_PRICE = 800;
 const SBP_PHONE = process.env.SBP_PHONE || '+79022231321';
 const SBP_RECIPIENT = process.env.SBP_RECIPIENT || 'Ермачкова Алина В.';
 const ADMIN_ID = parseInt(process.env.ADMIN_ID) || 0;
-
 // ===== Папка для чеков =====
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
 // ===== Multer =====
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
@@ -31,7 +27,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
 // ===== USER AUTH MIDDLEWARE =====
 router.use((req, res, next) => {
   const initData = req.header('x-telegram-init-data');
@@ -41,20 +36,18 @@ router.use((req, res, next) => {
   req.telegramUser = user;
   next();
 });
-
 // ===== ADMIN AUTH MIDDLEWARE =====
 const adminAuth = (req, res, next) => {
   if (!ADMIN_ID) return res.status(403).json({ error: 'Admin not configured' });
   if (req.telegramUser?.id !== ADMIN_ID) {
     return res.status(403).json({ error: 'Admin only' });
-  }  next();
+  }
+  next();
 };
-
 // ===== HELPERS =====
 function detectRequestType(text) {
   const lower = text.toLowerCase();
-  const keywords = [
-    'рецепт', 'приготовь', 'хочу', 'сделай', 'как сделать',
+  const keywords = [    'рецепт', 'приготовь', 'хочу', 'сделай', 'как сделать',
     'борщ', 'салат', 'суп', 'паста', 'карбонара', 'омлет', 'плов',
     'котлеты', 'торт', 'десерт', 'пицца', 'блины', 'шашлык', 'гуляш', 'рагу', 'запеканка'
   ];
@@ -62,7 +55,6 @@ function detectRequestType(text) {
   if (text.includes(',')) return 'ingredients';
   return 'dish';
 }
-
 function buildPrompt(requestType, ingredients, details, planType) {
   const isVIP = planType === 'VIP';
   const system = `Ты элитный ИИ Шеф-Повар. Создавай подробные рецепты. Структура: 🍽 Название, 📝 Описание, Ингредиенты, Время, 🔥 Метод, 👨‍🍳 Шаги, Советы, 🍷 Напитки. Каждый шаг: ⏱ время | температура | действия. ${isVIP ? 'Добавь 📊 КБЖУ на порцию.' : ''} Правила: используй эмодзи для структуры, не используй HTML.`;
@@ -71,7 +63,6 @@ function buildPrompt(requestType, ingredients, details, planType) {
     : `Рецепт: ${ingredients}\nДоп: ${details || 'нет'}`;
   return { system, user };
 }
-
 function parseSteps(fullText) {
   if (!fullText) return ['Текст рецепта не получен.'];
   const stepRegex = /(?:Шаг\s*\d+[.:\s-])|(?:^\d+.\s)/gim;
@@ -79,13 +70,12 @@ function parseSteps(fullText) {
   if (parts.length >= 2) return parts.map(p => p.trim());
   return fullText.split(/\n\s*\n/).filter(p => p.trim().length > 10);
 }
-
 function cleanHtml(text) {
   if (!text) return '';
   let safe = text
-    .replace(/```html/gi, '').replace(/```/g, '')
+    .replace(/`html/gi, '').replace(/`/g, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/ /g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const headings = ['🍽', '📝', '🔥', '👨‍🍳', '🍷', '📊', '⏱', '💡'];
@@ -96,9 +86,9 @@ function cleanHtml(text) {
   });
   const open = (safe.match(/<b>/g) || []).length;
   const close = (safe.match(/<\/b>/g) || []).length;
-  if (open !== close) return safe.replace(/<\/?b>/g, '');  return safe;
+  if (open !== close) return safe.replace(/<\/?b>/g, '');
+  return safe;
 }
-
 // ===== STATUS =====
 router.get('/recipe/status', async (req, res) => {
   try {
@@ -106,8 +96,7 @@ router.get('/recipe/status', async (req, res) => {
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
-    );
-    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
+    );    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
     res.json({
       subscription: sub || null,
       freeUsed: user?.free_recipes_used || 0,
@@ -118,26 +107,22 @@ router.get('/recipe/status', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== GENERATE RECIPE =====
 router.post('/recipe/generate', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
     const { ingredients, details } = req.body;
     if (!ingredients) return res.status(400).json({ error: 'No ingredients' });
-
     await global.pool.query(
       `INSERT INTO users (tg_id, username, first_name, free_recipes_used)
        VALUES ($1,$2,$3,0) ON CONFLICT (tg_id) DO NOTHING`,
       [tgId, req.telegramUser.username, req.telegramUser.first_name]
     );
-
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
     );
     const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
-
     if (!sub && user.free_recipes_used >= FREE_LIMIT) {
       return res.status(403).json({
         error: 'limit_reached',
@@ -148,30 +133,25 @@ router.post('/recipe/generate', async (req, res) => {
     const planType = sub?.plan_type || 'FREE';
     const requestType = detectRequestType(ingredients);
     const prompt = buildPrompt(requestType, ingredients, details, planType);
-
     let recipe = await callGigaChat(prompt.system, prompt.user);
     recipe = cleanHtml(recipe);
     const steps = parseSteps(recipe);
-
     if (!sub) {
       await global.pool.query(
         `UPDATE users SET free_recipes_used = free_recipes_used + 1 WHERE tg_id=$1`,
         [tgId]
       );
     }
-
     res.json({
       title: (recipe.match(/🍽 [^\n]+/) || ['Твой рецепт'])[0],
       fullText: recipe,
-      steps,
-      total: steps.length
+      steps,      total: steps.length
     });
   } catch (e) {
     console.error('Recipe error:', e);
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== STT =====
 router.post('/stt/recognize', uploadAudio.single('audio'), async (req, res) => {
   try {
@@ -182,7 +162,6 @@ router.post('/stt/recognize', uploadAudio.single('audio'), async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== PAYMENT INFO =====
 router.get('/payment/info', (req, res) => {
   res.json({
@@ -191,38 +170,31 @@ router.get('/payment/info', (req, res) => {
     prices: { PRO: PRO_PRICE, VIP: VIP_PRICE }
   });
 });
-
 // ===== UPLOAD RECEIPT =====
 router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
-  try {    if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
     const tgId = req.telegramUser.id;
     const { planType } = req.body;
     const amount = planType === 'VIP' ? VIP_PRICE : PRO_PRICE;
     const receiptPath = `/uploads/${req.file.filename}`;
-
     console.log(`📥 Загрузка чека от ${tgId}:`, req.file.filename);
-
     const { rows: [payment] } = await global.pool.query(
       `INSERT INTO payments (user_id, amount, receipt_file_path, status, plan_type)
        VALUES ($1,$2,$3,'pending',$4) RETURNING id, created_at`,
       [tgId, amount, receiptPath, planType]
     );
-
     console.log(`✅ Платёж создан: #${payment.id}`);
-
     const { rows: [user] } = await global.pool.query(
       `SELECT * FROM users WHERE tg_id=$1`, [tgId]
     );
-
     const { rows: [currentSub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE LIMIT 1`,
       [tgId]
     );
-
     if (global.sendPhotoToAdmin) {
       const isNewUser = !currentSub;
-      const caption =
-        `🚨 <b>НОВАЯ ЗАЯВКА #${payment.id}</b>\n\n` +
+      const caption =        `🚨 <b>НОВАЯ ЗАЯВКА #${payment.id}</b>\n\n` +
         `👤 <b>Пользователь:</b>\n` +
         `   • Имя: ${user?.first_name || 'unknown'}\n` +
         `   • Username: @${user?.username || '—'}\n` +
@@ -233,7 +205,6 @@ router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
         `   • Сумма: <b>${amount}₽</b>\n` +
         `   • Статус юзера: ${isNewUser ? '🆕 Новый' : `📅 ${currentSub.plan_type} до ${new Date(currentSub.expires_at).toLocaleDateString('ru-RU')}`}\n\n` +
         `📊 Рецептов создано: ${user?.free_recipes_used || 0}`;
-
       const keyboard = {
         inline_keyboard: [
           [
@@ -243,25 +214,23 @@ router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
           [
             { text: '🌐 Веб-админка', web_app: { url: `${process.env.MINI_APP_URL || ''}/admin.html` } }
           ]
-        ]      };
-
+        ]
+      };
+      // 🔥 ИСПРАВЛЕНО: используем абсолютный путь напрямую от multer
       const fullPath = req.file.path;
       console.log('📸 Путь к файлу:', fullPath);
       console.log('📸 Файл существует:', fs.existsSync(fullPath));
-
       await global.sendPhotoToAdmin(fullPath, caption, keyboard);
       console.log('✅ Чек отправлен админу');
     } else {
       console.error('❌ global.sendPhotoToAdmin не определён!');
     }
-
     res.json({ paymentId: payment.id, status: 'pending' });
   } catch (e) {
     console.error('❌ Upload error:', e);
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== PROFILE =====
 router.get('/user/profile', async (req, res) => {
   try {
@@ -274,9 +243,7 @@ router.get('/user/profile', async (req, res) => {
     res.json({ user, subscription: sub || null });
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
-
+  }});
 // ===== FULL PROFILE =====
 router.get('/user/fullprofile', async (req, res) => {
   try {
@@ -292,13 +259,13 @@ router.get('/user/fullprofile', async (req, res) => {
     );
     res.json({
       user,
-      subscription: sub || null,      approvedPayments: parseInt(count) || 0
+      subscription: sub || null,
+      approvedPayments: parseInt(count) || 0
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== VIP: WEEK MENU =====
 router.post('/vip/weekmenu', async (req, res) => {
   try {
@@ -319,15 +286,13 @@ router.post('/vip/weekmenu', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== VIP: DIET CONSULTATION =====
 router.post('/vip/diet', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
     const { question } = req.body;
     const { rows: [sub] } = await global.pool.query(
-      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
-      [tgId]
+      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,      [tgId]
     );
     if (!sub || sub.plan_type !== 'VIP') {
       return res.status(403).json({ error: 'Только для VIP' });
@@ -339,39 +304,22 @@ router.post('/vip/diet', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: СТАТИСТИКА =====
-router.get('/admin/stats', adminAuth, async (req, res) => {  try {
-    const { rows: [basic] } = await global.pool.query(`
-      SELECT 
-        (SELECT COUNT(*) FROM users) as total_users,
-        (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '24 hours') as users_today,
-        (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '7 days') as users_week,
-        (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '30 days') as users_month,
-        (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE) as active_subs,
-        (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE AND plan_type='PRO') as pro_subs,
-        (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE AND plan_type='VIP') as vip_subs,
-        (SELECT COUNT(*) FROM payments WHERE status='pending') as pending_payments,
-        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved') as total_revenue,
-        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '30 days') as revenue_month,
-        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '7 days') as revenue_week,
-        (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '24 hours') as revenue_today
-    `);
-
+router.get('/admin/stats', adminAuth, async (req, res) => {
+  try {
+    const { rows: [basic] } = await global.pool.query(`SELECT (SELECT COUNT(*) FROM users) as total_users, (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '24 hours') as users_today, (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '7 days') as users_week, (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '30 days') as users_month, (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE) as active_subs, (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE AND plan_type='PRO') as pro_subs, (SELECT COUNT(*) FROM subscriptions WHERE is_active=TRUE AND plan_type='VIP') as vip_subs, (SELECT COUNT(*) FROM payments WHERE status='pending') as pending_payments, (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved') as total_revenue, (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '30 days') as revenue_month, (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '7 days') as revenue_week, (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='approved' AND created_at > NOW() - INTERVAL '24 hours') as revenue_today`);
     const { rows: regChart } = await global.pool.query(`
       SELECT DATE(created_at) as date, COUNT(*) as count
       FROM users
       WHERE created_at > NOW() - INTERVAL '30 days'
       GROUP BY DATE(created_at) ORDER BY date ASC
     `);
-
     const { rows: revChart } = await global.pool.query(`
       SELECT DATE(created_at) as date, COALESCE(SUM(amount), 0) as revenue, COUNT(*) as count
       FROM payments
       WHERE status='approved' AND created_at > NOW() - INTERVAL '30 days'
       GROUP BY DATE(created_at) ORDER BY date ASC
     `);
-
     const { rows: expiring } = await global.pool.query(`
       SELECT u.first_name, u.username, u.tg_id, s.plan_type, s.expires_at
       FROM subscriptions s
@@ -379,30 +327,26 @@ router.get('/admin/stats', adminAuth, async (req, res) => {  try {
       WHERE s.is_active = TRUE AND s.expires_at BETWEEN NOW() AND NOW() + INTERVAL '7 days'
       ORDER BY s.expires_at ASC
     `);
-
     res.json({ basic, regChart, revChart, expiring, prices: { PRO: PRO_PRICE, VIP: VIP_PRICE } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ПЛАТЕЖИ =====
 router.get('/admin/payments', adminAuth, async (req, res) => {
   try {
     const { status, plan_type, page = 1, limit = 20 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);    let where = 'WHERE 1=1';
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-
     if (status && status !== 'all') {
-      where += ` AND p.status = $${idx++}`;
-      params.push(status);
+      where += ` AND p.status = $${idx++}`;      params.push(status);
     }
     if (plan_type && plan_type !== 'all') {
       where += ` AND p.plan_type = $${idx++}`;
       params.push(plan_type);
     }
-
     const { rows: payments } = await global.pool.query(
       `SELECT p.*, u.first_name, u.username, u.tg_id
        FROM payments p JOIN users u ON p.user_id = u.tg_id
@@ -411,12 +355,10 @@ router.get('/admin/payments', adminAuth, async (req, res) => {
        LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, parseInt(limit), offset]
     );
-
     const { rows: [{ total }] } = await global.pool.query(
       `SELECT COUNT(*) as total FROM payments p ${where}`,
       params
     );
-
     res.json({
       payments,
       total: parseInt(total),
@@ -427,7 +369,6 @@ router.get('/admin/payments', adminAuth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ПОЛЬЗОВАТЕЛИ =====
 router.get('/admin/users', adminAuth, async (req, res) => {
   try {
@@ -436,10 +377,10 @@ router.get('/admin/users', adminAuth, async (req, res) => {
     let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
-
     if (search) {
       where += ` AND (u.first_name ILIKE $${idx} OR u.username ILIKE $${idx} OR u.tg_id::text LIKE $${idx})`;
-      params.push(`%${search}%`);      idx++;
+      params.push(`%${search}%`);
+      idx++;
     }
     if (plan && plan !== 'all') {
       if (plan === 'FREE') {
@@ -449,9 +390,7 @@ router.get('/admin/users', adminAuth, async (req, res) => {
         params.push(plan);
         idx++;
       }
-    }
-
-    const { rows: users } = await global.pool.query(
+    }    const { rows: users } = await global.pool.query(
       `SELECT u.*, s.plan_type, s.expires_at, s.is_active,
        (SELECT COUNT(*) FROM payments WHERE user_id = u.tg_id AND status='approved') as total_paid
        FROM users u LEFT JOIN subscriptions s ON s.user_id = u.tg_id AND s.is_active = TRUE
@@ -459,12 +398,10 @@ router.get('/admin/users', adminAuth, async (req, res) => {
        LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, parseInt(limit), offset]
     );
-
     const { rows: [{ total }] } = await global.pool.query(
       `SELECT COUNT(*) as total FROM users u LEFT JOIN subscriptions s ON s.user_id = u.tg_id AND s.is_active = TRUE ${where}`,
       params
     );
-
     res.json({
       users,
       total: parseInt(total),
@@ -475,7 +412,6 @@ router.get('/admin/users', adminAuth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ПРОСМОТР ЮЗЕРА =====
 router.get('/admin/user/:tgId', adminAuth, async (req, res) => {
   try {
@@ -488,13 +424,13 @@ router.get('/admin/user/:tgId', adminAuth, async (req, res) => {
       `SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY starts_at DESC`, [tgId]
     );
     const { rows: payments } = await global.pool.query(
-      `SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC`, [tgId]    );
+      `SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC`, [tgId]
+    );
     res.json({ user, subscriptions: subs, payments });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ВЫДАТЬ ТАРИФ =====
 router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
   try {
@@ -503,9 +439,7 @@ router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
     if (!['PRO', 'VIP'].includes(planType)) {
       return res.status(400).json({ error: 'Invalid plan type' });
     }
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + parseInt(days));
-
+    const expiresAt = new Date();    expiresAt.setDate(expiresAt.getDate() + parseInt(days));
     await global.pool.query(
       `UPDATE subscriptions SET is_active=FALSE WHERE user_id=$1`, [tgId]
     );
@@ -516,7 +450,6 @@ router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
     await global.pool.query(
       `UPDATE users SET free_recipes_used=0 WHERE tg_id=$1`, [tgId]
     );
-
     try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
@@ -528,25 +461,17 @@ router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
     } catch (e) {
       console.error('Notify user error:', e.message);
     }
-
     res.json({ success: true, expiresAt });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: БАН =====
 router.post('/admin/user/:tgId/ban', adminAuth, async (req, res) => {
-  try {    const { tgId } = req.params;
+  try {
+    const { tgId } = req.params;
     const { banned = true } = req.body;
-    await global.pool.query(`
-      DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_banned') THEN
-          ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT FALSE;
-        END IF;
-      END $$;
-    `);
-
+    await global.pool.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_banned') THEN ALTER TABLE users ADD COLUMN is_banned BOOLEAN DEFAULT FALSE; END IF; END $$;`);
     await global.pool.query(
       `UPDATE users SET is_banned=$1 WHERE tg_id=$2`,
       [banned, tgId]
@@ -557,16 +482,13 @@ router.post('/admin/user/:tgId/ban', adminAuth, async (req, res) => {
         [tgId]
       );
     }
-
     res.json({ success: true, banned });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ОДОБРИТЬ ПЛАТЕЖ =====
-router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
-  try {
+router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {  try {
     const { id } = req.params;
     const { rows: [payment] } = await global.pool.query(
       `SELECT * FROM payments WHERE id=$1`, [id]
@@ -574,7 +496,6 @@ router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
-
     await global.pool.query(
       `UPDATE subscriptions SET is_active=FALSE WHERE user_id=$1`,
       [payment.user_id]
@@ -586,10 +507,10 @@ router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
     await global.pool.query(
       `UPDATE users SET free_recipes_used=0 WHERE tg_id=$1`,
       [payment.user_id]
-    );    await global.pool.query(
+    );
+    await global.pool.query(
       `UPDATE payments SET status='approved' WHERE id=$1`, [id]
     );
-
     try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
@@ -601,13 +522,11 @@ router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
     } catch (e) {
       console.error('Notify user error:', e.message);
     }
-
     res.json({ success: true, expiresAt });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ОТКЛОНИТЬ ПЛАТЕЖ =====
 router.post('/admin/payment/:id/reject', adminAuth, async (req, res) => {
   try {
@@ -618,9 +537,7 @@ router.post('/admin/payment/:id/reject', adminAuth, async (req, res) => {
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
     await global.pool.query(
       `UPDATE payments SET status='rejected' WHERE id=$1`, [id]
-    );
-
-    try {
+    );    try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
       await notifyBot.telegram.sendMessage(
@@ -631,26 +548,20 @@ router.post('/admin/payment/:id/reject', adminAuth, async (req, res) => {
     } catch (e) {
       console.error('Notify user error:', e.message);
     }
-
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }});
-
+  }
+});
 // ===== ADMIN: PENDING =====
 router.get('/admin/pending', adminAuth, async (req, res) => {
   try {
-    const { rows } = await global.pool.query(`
-      SELECT p.id, u.first_name, u.username, u.tg_id, p.amount, p.plan_type, p.created_at, p.receipt_file_path
-      FROM payments p JOIN users u ON p.user_id = u.tg_id
-      WHERE p.status = 'pending' ORDER BY p.created_at DESC LIMIT 50
-    `);
+    const { rows } = await global.pool.query(`SELECT p.id, u.first_name, u.username, u.tg_id, p.amount, p.plan_type, p.created_at, p.receipt_file_path FROM payments p JOIN users u ON p.user_id = u.tg_id WHERE p.status = 'pending' ORDER BY p.created_at DESC LIMIT 50`);
     res.json({ pending: rows, count: rows.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // ===== ADMIN: ЭКСПОРТ =====
 router.get('/admin/export/:type', adminAuth, async (req, res) => {
   try {
@@ -658,7 +569,6 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Chef AI Admin';
     workbook.created = new Date();
-
     if (type === 'users') {
       const { rows } = await global.pool.query(`
         SELECT u.tg_id, u.username, u.first_name, u.free_recipes_used, u.created_at,
@@ -676,22 +586,21 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         { header: 'Тариф', key: 'plan_type', width: 10 },
         { header: 'Активен', key: 'is_active', width: 10 },
         { header: 'До', key: 'expires_at', width: 15 },
-        { header: 'Регистрация', key: 'created_at', width: 20 }
-      ];
+        { header: 'Регистрация', key: 'created_at', width: 20 }      ];
       sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
       sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
       rows.forEach(r => {
         sheet.addRow({
           tg_id: r.tg_id,
           username: r.username || '-',
-          first_name: r.first_name || '-',          free_recipes_used: r.free_recipes_used || 0,
+          first_name: r.first_name || '-',
+          free_recipes_used: r.free_recipes_used || 0,
           plan_type: r.plan_type || 'FREE',
           is_active: r.is_active ? '✅' : '❌',
           expires_at: r.expires_at ? new Date(r.expires_at).toLocaleDateString('ru-RU') : '-',
           created_at: new Date(r.created_at).toLocaleString('ru-RU')
         });
       });
-
     } else if (type === 'payments') {
       const { rows } = await global.pool.query(`
         SELECT p.id, p.user_id, u.username, u.first_name, p.amount, p.plan_type, p.status, p.created_at, p.receipt_file_path
@@ -726,14 +635,13 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
           receipt_file_path: r.receipt_file_path || '-'
         });
       });
-
-    } else if (type === 'subscriptions') {
-      const { rows } = await global.pool.query(`
+    } else if (type === 'subscriptions') {      const { rows } = await global.pool.query(`
         SELECT s.id, s.user_id, u.username, u.first_name, s.plan_type, s.starts_at, s.expires_at, s.is_active
         FROM subscriptions s JOIN users u ON s.user_id = u.tg_id
         ORDER BY s.starts_at DESC
       `);
-      const sheet = workbook.addWorksheet('Подписки');      sheet.columns = [
+      const sheet = workbook.addWorksheet('Подписки');
+      sheet.columns = [
         { header: 'ID', key: 'id', width: 8 },
         { header: 'TG ID', key: 'user_id', width: 15 },
         { header: 'Username', key: 'username', width: 20 },
@@ -757,11 +665,9 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
           is_active: r.is_active ? '✅' : '❌'
         });
       });
-
     } else {
       return res.status(400).json({ error: 'Invalid export type' });
     }
-
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=${type}_${new Date().toISOString().split('T')[0]}.xlsx`);
     await workbook.xlsx.write(res);
@@ -771,5 +677,4 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 module.exports = router;
