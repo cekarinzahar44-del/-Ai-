@@ -2,352 +2,348 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Шеф-Повар AI</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link rel="stylesheet" href="/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<div id="app">
-
-  <!-- ═══ HOME ═══ -->
-  <section id="screen-home" class="screen active">
-    <header class="app-header">
-      <h1>Шеф-Повар</h1>
-      <div id="user-badge" class="badge">FREE</div>
-    </header>
-
+  <div id="loader" class="loader-screen">
+    <div class="loader-emoji">👨‍🍳</div>
+    <p>Загружаем...</p>
+  </div>
+  
+  <div id="access-denied" class="error-screen" style="display:none;">
+    <div class="error-emoji">🔒</div>
+    <p>Доступ запрещён</p>
+  </div>
+  
+  <!-- ВЫБОР ЭКРАНА -->
+  <div id="screen-home" class="screen active">
+    <div class="app-header">
+      <h1>Шеф-Повар AI</h1>
+      <button class="icon-btn-sm" onclick="showScreen('profile')">
+        <span>👤</span>
+      </button>
+    </div>
+    
     <div class="hero">
-      <div class="hero-icon-wrap">
-        <span class="hero-emoji">🍳</span>
-      </div>
-      <h2>Что будем<br>готовить?</h2>
-      <p class="hint">Назови блюдо голосом или напиши</p>
+      <div class="hero-emoji">👨‍🍳</div>
+      <h2>Создаю уникальные рецепты с помощью ИИ!</h2>
+      <p class="hint">Скажи "Привет Шеф" или назови блюдо голосом</p>
     </div>
-
+    
     <div class="input-area">
-      <textarea id="dish-input" placeholder="Например: паста карбонара…" rows="2"></textarea>
+      <textarea id="dish-input" placeholder="Например: борщ, паста, салат" rows="2"></textarea>
+      
+      <div class="quick-chips">
+        <div class="chip" data-dish="Борщ">Борщ</div>
+        <div class="chip" data-dish="Паста">Паста</div>
+        <div class="chip" data-dish="Салат">Салат</div>
+        <div class="chip" data-dish="Пицца">Пицца</div>
+        <div class="chip" data-dish="Омлет">Омлет</div>
+        <div class="chip" data-dish="Котлеты">Котлеты</div>
+      </div>      
       <div class="input-actions">
-        <button id="btn-voice" class="icon-btn" title="Голос">🎤</button>
-        <button id="btn-send" class="primary-btn">Найти рецепт</button>
+        <button id="btn-voice" class="icon-btn">
+          <span>🎤</span>
+        </button>
+        <button id="btn-send" class="primary-btn full">
+          Готовим!
+        </button>
+      </div>
+      
+      <div class="voice-hint">
+        <b>💡 Совет:</b> Нажмите микрофон и скажите: "Блюдо из куриной грудки и помидоров"
       </div>
     </div>
-
-    <div class="divider">
-      <span class="divider-text">Быстрый выбор</span>
-    </div>
-
-    <div class="quick-chips">
-      <span class="chip" data-dish="Борщ">🥣 Борщ</span>
-      <span class="chip" data-dish="Паста">🍝 Паста</span>
-      <span class="chip" data-dish="Салат Цезарь">🥗 Цезарь</span>
-      <span class="chip" data-dish="Омлет">🍳 Омлет</span>
-      <span class="chip" data-dish="Плов">🍚 Плов</span>
-      <span class="chip" data-dish="Котлеты">🍖 Котлеты</span>
-    </div>
-
+    
     <div class="status-bar">
-      <span id="free-count">Загрузка…</span>
+      <span id="free-count">Осталось: 3 из 3</span>
     </div>
-
-    <div class="profile-link" onclick="showScreen('profile')">
-      <span>👤</span>
-      <span>Мой профиль</span>
+  </div>
+  
+  <!-- ПОДРОБНОСТИ РЕЦЕПТА -->
+  <div id="screen-details" class="screen">
+    <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>Уточни детали</h1>
     </div>
-  </section>
-
-  <!-- ═══ DETAILS ═══ -->
-  <section id="screen-details" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('home')">Назад</button>
-      <div class="screen-title">Детали блюда</div>
-      <p class="screen-subtitle">Уточни параметры рецепта</p>
-    </div>
-
-    <div class="screen-content">
+    
+    <div class="input-area">
       <div class="form-group">
-        <label class="form-label">Количество порций</label>
-        <div class="form-input-wrap">
-          <div class="portions-input">
-            <button class="portions-btn" onclick="changePortions(-1)">−</button>
-            <input type="number" id="portions" value="2" min="1" max="20" readonly>
-            <button class="portions-btn" onclick="changePortions(1)">+</button>
-          </div>
-        </div>
+        <label>Порций</label>
+        <input type="number" id="portions" placeholder="2" min="1" max="10" value="2">
       </div>
-
+      
       <div class="form-group">
-        <label class="form-label">Предпочтения</label>
+        <label>Предпочтения</label>
         <div class="pref-chips">
-          <span class="pref" data-pref="ПП">🥗 ПП</span>
-          <span class="pref" data-pref="Быстро">⚡ Быстро</span>
-          <span class="pref" data-pref="Бюджетно">💰 Бюджет</span>
-          <span class="pref" data-pref="Вегетарианское">🌱 Веган</span>
-          <span class="pref" data-pref="Острое">🌶 Острое</span>
+          <div class="pref" data-pref="ПП">ПП</div>
+          <div class="pref" data-pref="Быстро">Быстро</div>
+          <div class="pref" data-pref="Бюджет">Бюджет</div>
+          <div class="pref" data-pref="Веган">Веган</div>
+          <div class="pref" data-pref="Остро">Остро</div>
         </div>
       </div>
-
+      
       <div class="form-group">
-        <label class="form-label">Дополнительные пожелания</label>
-        <div class="form-input-wrap">
-          <textarea id="extra-details" rows="3" placeholder="Без лука, поострее, с сыром…"></textarea>
-        </div>
+        <label>Доп. пожелания</label>
+        <textarea id="extra-details" placeholder="Например: без соли, для ребенка"></textarea>
       </div>
-
-      <button id="btn-generate" class="primary-btn full">Приготовить рецепт</button>
+            <button id="btn-generate" class="primary-btn full">
+        👨‍🍳 Готовим!
+      </button>
     </div>
-  </section>
-
-  <!-- ═══ LOADING ═══ -->
-  <section id="screen-loading" class="screen">
-    <div class="loader">
-      <div class="loader-visual">
-        <div class="loader-ring-2"></div>
-        <div class="loader-ring"></div>
-        <span class="loader-emoji">👨‍🍳</span>
-      </div>
-      <div class="loader-title">Шеф готовит рецепт</div>
-      <div class="hint">Это займёт несколько секунд…</div>
-      <div class="loader-dots">
-        <span></span><span></span><span></span>
-      </div>
+  </div>
+  
+  <!-- РЕЦЕПТ -->
+  <div id="screen-recipe" class="screen">
+    <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+    
+    <div class="app-header">
+      <h1 id="recipe-title">Твой рецепт</h1>
     </div>
-  </section>
-
-  <!-- ═══ RECIPE ═══ -->
-  <section id="screen-recipe" class="screen">
-    <div class="recipe-header">
-      <button class="back-btn" onclick="showScreen('home')">Назад</button>
-      <div class="recipe-actions">
-        <button id="btn-voice-nav" class="icon-btn" title="Голосовое управление">🎤</button>
-        <button id="btn-voice-read" class="icon-btn" title="Озвучить шаг">🔊</button>
-      </div>
-    </div>
-
-    <h2 id="recipe-title"></h2>
-
-    <div class="voice-hint">
-      💡 Скажи: <b>«далее»</b>, <b>«назад»</b>, <b>«повтори»</b>, <b>«стоп»</b>
-    </div>
-
-    <div class="step-progress-wrap">
-      <div class="step-progress-label">
-        <span class="step-number">Шаг <span id="step-current">1</span> из <span id="step-total">5</span></span>
-        <span id="step-percent">20%</span>
-      </div>
-      <div class="step-progress-bar">
-        <div class="step-progress-fill" id="step-progress-fill" style="width: 20%"></div>
-      </div>
-    </div>
-
+    
     <div class="step-card">
-      <div id="step-text" class="step-text"></div>
-    </div>
-
-    <div class="step-nav">
-      <button id="btn-prev" class="nav-btn">← Назад</button>
-      <button id="btn-next" class="nav-btn primary">Далее →</button>
-    </div>
-
-    <div style="padding: 0 16px 24px; position:relative; z-index:10;">
-      <button id="btn-full-recipe" class="ghost-btn full">Весь рецепт</button>
-    </div>
-  </section>
-
-  <!-- ═══ SUBSCRIPTION ═══ -->
-  <section id="screen-subscription" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('home')">Назад</button>
-      <div class="screen-title">Подписка</div>
-      <p class="screen-subtitle">Откройте безлимитный доступ к рецептам</p>
-    </div>
-
-    <div class="plans-wrap">
-      <div class="plan-card">
-        <div class="plan-header">
-          <div>
-            <div class="plan-icon">💳</div>
-            <h3>PRO</h3>
-          </div>
-          <div class="price">500₽<span>/мес</span></div>
-        </div>
-        <ul>
-          <li>Безлимит рецептов</li>
-          <li>Голосовое управление</li>
-          <li>Приоритетная генерация</li>
-        </ul>
-        <button class="primary-btn full" onclick="buyPlan('PRO')">Выбрать PRO</button>
+      <div class="step-number">Шаг <span id="step-current">1</span> из <span id="step-total">5</span></div>
+      <div class="step-text" id="step-text">
+        Текст шага
       </div>
-
-      <div class="plan-card vip">
-        <div class="plan-header">
-          <div>
-            <div class="plan-icon">👑</div>
-            <h3>VIP</h3>
-          </div>
-          <div>
-            <div class="vip-badge">ТОПОВЫЙ</div>
-            <div class="price">800₽<span>/мес</span></div>
-          </div>
-        </div>
-        <ul>
-          <li>Всё из PRO</li>
-          <li>ИИ-диетолог</li>
-          <li>КБЖУ на порцию</li>
-          <li>Меню на неделю</li>
-        </ul>
-        <button class="primary-btn gold full" onclick="buyPlan('VIP')">Выбрать VIP</button>
+      
+      <div class="step-nav">
+        <button id="btn-prev" class="nav-btn" disabled>← Назад</button>
+        <button id="btn-next" class="nav-btn primary">Далее ➡️</button>
+      </div>
+      
+      <div class="step-actions">
+        <button id="btn-voice-read" class="btn-sm ghost-btn">
+          🎤 Озвучить
+        </button>
+        <button id="btn-full-recipe" class="btn-sm ghost-btn">
+          📜 Весь рецепт
+        </button>
       </div>
     </div>
-  </section>
-
-  <!-- ═══ PAYMENT ═══ -->
-  <section id="screen-payment" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('subscription')">Назад</button>
-      <div class="screen-title">Оплата</div>
-      <p class="screen-subtitle">Перевод через СБП</p>
+    
+    <div class="voice-hint">
+      <b>💡 Совет:</b> Скажите "далее", "назад", "повтори", "стоп" для управления голосом
     </div>
-
-    <div class="payment-wrap">
-      <div class="payment-amount-card">
-        <div class="payment-amount-label">К оплате</div>
-        <div class="payment-amount-value"><span id="pay-amount"></span> ₽</div>
+  </div>
+  
+  <!-- ПОДПИСКИ -->
+  <div id="screen-subscription" class="screen">
+    <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>Тарифы</h1>
+    </div>
+    
+    <div class="plan-card">
+      <div class="plan-icon">🍳</div>      <h3>FREE</h3>
+      <p class="hint">Базовый тариф</p>
+      
+      <div class="price">0₽</div>
+      
+      <ul>
+        <li>3 бесплатных рецепта</li>
+        <li>Голосовое управление</li>
+        <li>Рецепты на 1 день</li>
+      </ul>
+    </div>
+    
+    <div class="plan-card">
+      <div class="plan-icon">🔥</div>
+      <h3>PRO</h3>
+      <p class="hint">Для тех, кто готовит часто</p>
+      
+      <div class="price">500₽<span>/мес</span></div>
+      
+      <ul>
+        <li>Безлимит рецептов</li>
+        <li>Голосовое управление</li>
+        <li>Рецепты на 7 дней</li>
+        <li>Приоритетная генерация</li>
+      </ul>
+      
+      <button class="primary-btn" onclick="buyPlan('PRO')">
+        💳 Купить PRO
+      </button>
+    </div>
+    
+    <div class="plan-card vip">
+      <div class="plan-icon">💎</div>
+      <h3>VIP</h3>
+      <p class="hint">Премиум-тариф</p>
+      
+      <div class="price" style="background: var(--gradient-gold); color: #2a1810;">
+        800₽<span>/мес</span>
       </div>
-
-      <div class="payment-card">
-        <div class="payment-card-header">Реквизиты СБП</div>
-        <div class="payment-row">
-          <div class="payment-row-label">Телефон</div>
-          <div class="payment-row-value" id="sbp-phone">—</div>
-        </div>
-        <div class="payment-row">
-          <div class="payment-row-label">Получатель</div>
-          <div class="payment-row-value" id="sbp-recipient">—</div>
-        </div>
+      
+      <ul>
+        <li>Всё из PRO</li>
+        <li>ИИ диетолог</li>
+        <li>КБЖУ на порцию</li>
+        <li>Меню на неделю</li>
+        <li>Персональные рекомендации</li>
+      </ul>
+      
+      <button class="primary-btn gold" onclick="buyPlan('VIP')">
+        💎 Купить VIP      </button>
+    </div>
+  </div>
+  
+  <!-- ОПЛАТА -->
+  <div id="screen-payment" class="screen">
+    <button class="back-btn" onclick="showScreen('subscription')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>Оплата</h1>
+    </div>
+    
+    <div class="payment-info">
+      <div class="pay-title">Переведите по СБП:</div>
+      <div class="sbp-block">
+        <div>📱 <code id="sbp-phone"></code></div>
+        <div>👤 <span id="sbp-recipient"></span></div>
+        <div class="pay-amount">💰 <span id="pay-amount"></span></div>
       </div>
-
+      
       <div class="form-group">
-        <label class="form-label">Скриншот чека</label>
+        <label>Загрузите скриншот чека</label>
         <input type="file" id="receipt-file" accept="image/*">
       </div>
-
-      <button id="btn-upload-receipt" class="primary-btn gold full">Отправить чек</button>
+      
+      <button id="btn-upload-receipt" class="primary-btn full">
+        📤 Отправить чек
+      </button>
     </div>
-  </section>
-
-  <!-- ═══ VIP: WEEK MENU ═══ -->
-<!-- VIP: WEEK MENU -->
-<section id="screen-weekmenu" class="screen">
-  <button class="back-btn" onclick="showScreen('profile')">← Назад</button>
-  <h2>📅 Меню на неделю</h2>
-  
-  <div class="vip-feature-card">
-    <div class="vip-icon">🗓</div>
-    <h3>Персональное меню</h3>
-    <p class="hint">ИИ-шеф составит меню на 7 дней с полными рецептами, шагами и списком покупок</p>
-    <div class="form-group">
-      <label>Ваши предпочтения</label>
-      <textarea id="weekmenu-prefs" rows="3" placeholder="Например: без мяса, бюджетно, на 2 человек, похудение..."></textarea>
-    </div>
-    <button id="btn-generate-weekmenu" class="primary-btn full">✨ Составить меню</button>
   </div>
   
-  <div id="weekmenu-result" class="weekmenu-container" style="display:none;">
-    <div class="weekmenu-actions">
-      <button id="btn-download-weekmenu" class="primary-btn gold">
-        📄 Скачать PDF
-      </button>
-      <button id="btn-print-weekmenu" class="ghost-btn">
-        🖨 Печать
-      </button>
-      <button id="btn-share-weekmenu" class="ghost-btn">
-        📤 Поделиться
-      </button>
+  <!-- МЕНЮ НА НЕДЕЛЮ -->
+  <div id="screen-weekmenu" class="screen">
+    <button class="back-btn" onclick="showScreen('profile')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>Меню на неделю</h1>
     </div>
-    <div id="weekmenu-text" class="weekmenu-content"></div>
+    
+    <div class="vip-feature-card">
+      <div class="vip-icon">🗓</div>
+      <h3>Персональное меню</h3>
+      <p class="hint">ИИ составит меню на 7 дней с учётом твоих предпочтений</p>
+      
+      <div class="form-group">
+        <textarea id="weekmenu-prefs" rows="3" placeholder="Например: без мяса, бюджетно, на 2 человек, похудение..."></textarea>
+      </div>
+      
+      <button id="btn-generate-weekmenu" class="primary-btn full">
+        ✨ Составить меню      </button>
+    </div>
+    
+    <div id="weekmenu-result" class="weekmenu-container" style="display:none;">
+      <div class="weekmenu-actions">
+        <button id="btn-download-weekmenu" class="primary-btn gold">
+          📄 Скачать PDF
+        </button>
+        <button id="btn-print-weekmenu" class="ghost-btn">
+          🖨 Печать
+        </button>
+        <button id="btn-share-weekmenu" class="ghost-btn">
+          📤 Поделиться
+        </button>
+      </div>
+      <div id="weekmenu-text" class="weekmenu-content"></div>
+    </div>
   </div>
-</section>
-
-  <!-- ═══ VIP: DIET ═══ -->
-  <section id="screen-diet" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('profile')">Назад</button>
-      <div class="screen-title">ИИ-Диетолог</div>
+  
+  <!-- ДИЕТОЛОГ -->
+  <div id="screen-diet" class="screen">
+    <button class="back-btn" onclick="showScreen('profile')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>ИИ Диетолог</h1>
     </div>
-
-    <div class="screen-content">
-      <div class="vip-feature-card">
-        <span class="vip-icon">👨‍⚕️</span>
-        <h3>Персональная консультация</h3>
-        <p class="hint" style="margin-bottom:20px; text-align:left;">Задай вопрос о питании, КБЖУ, диетах</p>
-        <div class="form-group">
-          <label class="form-label">Твой вопрос</label>
-          <div class="form-input-wrap">
-            <textarea id="diet-question" rows="3" placeholder="Сколько калорий мне нужно в день?"></textarea>
-          </div>
+    
+    <div class="vip-feature-card">
+      <div class="vip-icon">👨‍⚕️</div>
+      <h3>Персональная консультация</h3>
+      <p class="hint">Задай вопрос о питании, КБЖУ, диетах</p>
+      
+      <div class="form-group">
+        <textarea id="diet-question" rows="3" placeholder="Например: Как похудеть без вреда для здоровья?"></textarea>
+      </div>
+      
+      <button id="btn-ask-diet" class="primary-btn full">
+        💬 Спросить
+      </button>
+    </div>
+    
+    <div id="diet-result" class="weekmenu-container" style="display:none;">
+      <div id="diet-text" class="weekmenu-content"></div>
+    </div>
+  </div>
+  
+  <!-- ПРОФИЛЬ -->
+  <div id="screen-profile" class="screen">
+    <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+        <div class="app-header">
+      <h1>Профиль</h1>
+    </div>
+    
+    <div class="profile-card">
+      <div class="profile-avatar">👤</div>
+      <div class="profile-name" id="profile-name">Пользователь</div>
+      <div class="profile-username" id="profile-username">@username</div>
+      
+      <div class="profile-stats">
+        <div class="stat-item">
+          <div class="stat-value" id="stat-recipes">0</div>
+          <div class="stat-label">Рецептов</div>
         </div>
-        <button id="btn-ask-diet" class="primary-btn full">💬 Спросить</button>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-plan">FREE</div>
+          <div class="stat-label">Тариф</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-expires">—</div>
+          <div class="stat-label">До</div>
+        </div>
       </div>
-
-      <div id="diet-result" class="step-card" style="display:none;">
-        <div id="diet-text" class="step-text"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ PROFILE ═══ -->
-  <section id="screen-profile" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('home')">Назад</button>
-    </div>
-
-    <div class="profile-hero">
-      <div class="profile-card">
-        <div class="profile-avatar" id="profile-avatar">👤</div>
-        <div class="profile-name" id="profile-name">Пользователь</div>
-        <div class="profile-username" id="profile-username"></div>
+      
+      <div class="profile-actions">
+        <button class="profile-link" onclick="showScreen('subscription')">Тарифы</button>
+        <button class="profile-link" onclick="showScreen('weekmenu')">Меню на неделю</button>
+        <button class="profile-link" onclick="showScreen('diet')">Диетолог</button>
       </div>
     </div>
-
-    <div class="profile-stats">
-      <div class="stat-item">
-        <div class="stat-value" id="stat-recipes">0</div>
-        <div class="stat-label">Рецептов</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-value" id="stat-plan">FREE</div>
-        <div class="stat-label">Тариф</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-value" id="stat-expires">—</div>
-        <div class="stat-label">До</div>
-      </div>
+  </div>
+  
+  <!-- СТАТУС -->
+  <div id="screen-status" class="screen">
+    <button class="back-btn" onclick="showScreen('home')">← Назад</button>
+    
+    <div class="app-header">
+      <h1>Статус</h1>
     </div>
-
-    <div class="divider" style="padding: 0 16px;">
-      <span class="divider-text">VIP функции</span>
+    
+    <div class="status-card">
+      <h3>Твой тариф</h3>
+      <div class="stat-value" id="status-plan">FREE</div>
+      <div class="stat-label">Срок действия: <span id="status-expires">—</span></div>
     </div>
-
-    <div class="profile-actions">
-      <button class="ghost-btn full" onclick="showScreen('weekmenu')">📅 Меню на неделю</button>
-      <button class="ghost-btn full" onclick="showScreen('diet')">🥗 ИИ-Диетолог</button>
-      <button class="ghost-btn full" onclick="showScreen('subscription')">💎 Управление подпиской</button>
-    </div>
-  </section>
-
-</div>
-<script src="/app.js"></script>
-<script>
-// Portions helper
-function changePortions(delta) {
-  const inp = document.getElementById('portions');
-  const val = parseInt(inp.value) || 2;
-  inp.value = Math.max(1, Math.min(20, val + delta));
-}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="/app.js"></script>
+    
+    <div class="status-card">
+      <h3>Свободные рецепты</h3>
+      <div class="stat-value" id="status-recipes">3 из 3</div>
+      <div class="stat-label">До окончания пробного периода</div>    </div>
+  </div>
+  
+  <script src="/app.js"></script>
 </body>
 </html>
