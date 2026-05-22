@@ -3,9 +3,11 @@ if (tg) {
   tg.ready();
   tg.expand();
   tg.setHeaderColor?.('secondary_bg_color');
+  tg.disableVerticalSwiping?.(); // Отключаем свайп в Mini App
 }
 
 const initData = tg?.initData || '';
+const API_BASE = '/api'; // Базовый URL для запросов
 
 // ===== АББРЕВИАТУРЫ ДЛЯ TTS =====
 const abbrMap = {
@@ -40,36 +42,39 @@ function prepareForTTS(text) {
 // ===== API =====
 const API = {
   async request(path, options = {}) {
-    const res = await fetch(path, {
+    const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers: {
         'x-telegram-init-data': initData,
         'Content-Type': 'application/json',
-        ...(options.headers || {})
-      }
-    });    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error');
+        ...(options.headers || {})      }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error('API Error:', data.error || res.statusText);
+      throw new Error(data.error || 'API request failed');
+    }
     return data;
   },
-  getStatus: () => API.request('/api/recipe/status'),
-  generateRecipe: (ingredients, details) => API.request('/api/recipe/generate', {
+  getStatus: () => API.request('/recipe/status'),
+  generateRecipe: (ingredients, details) => API.request('/recipe/generate', {
     method: 'POST',
     body: JSON.stringify({ ingredients, details })
   }),
-  getPaymentInfo: () => API.request('/api/payment/info'),
-  getFullProfile: () => API.request('/api/user/fullprofile'),
-  generateWeekMenu: (prefs) => API.request('/api/vip/weekmenu', {
+  getPaymentInfo: () => API.request('/payment/info'),
+  getFullProfile: () => API.request('/user/fullprofile'),
+  generateWeekMenu: (prefs) => API.request('/vip/weekmenu', {
     method: 'POST',
     body: JSON.stringify({ prefs })
   }),
-  askDiet: (question) => API.request('/api/vip/diet', {
+  askDiet: (question) => API.request('/vip/diet', {
     method: 'POST',
     body: JSON.stringify({ question })
   }),
   recognizeVoice: async (blob) => {
     const fd = new FormData();
     fd.append('audio', blob, 'voice.webm');
-    const res = await fetch('/api/stt/recognize', {
+    const res = await fetch(`${API_BASE}/stt/recognize`, {
       method: 'POST',
       headers: { 'x-telegram-init-data': initData },
       body: fd
@@ -80,7 +85,7 @@ const API = {
     const fd = new FormData();
     fd.append('receipt', file);
     fd.append('planType', planType);
-    const res = await fetch('/api/payment/upload', {
+    const res = await fetch(`${API_BASE}/payment/upload`, {
       method: 'POST',
       headers: { 'x-telegram-init-data': initData },
       body: fd
@@ -91,12 +96,13 @@ const API = {
 
 // ===== VOICE (запись + озвучка) =====
 const Voice = {
-  mediaRecorder: null,
-  chunks: [],
+  mediaRecorder: null,  chunks: [],
   isRecording: false,
+  
   async startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });      this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       this.chunks = [];
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) this.chunks.push(e.data);
@@ -105,10 +111,12 @@ const Voice = {
       this.isRecording = true;
       return true;
     } catch (e) {
-      alert('Нет доступа к микрофону');
+      console.error('Microphone error:', e);
+      alert('Нет доступа к микрофону. Проверьте права в браузере.');
       return false;
     }
   },
+  
   stopRecording() {
     return new Promise((resolve) => {
       if (!this.mediaRecorder) return resolve('');
@@ -119,21 +127,28 @@ const Voice = {
         try {
           const data = await API.recognizeVoice(blob);
           resolve(data.text || '');
-        } catch (e) { resolve(''); }
+        } catch (e) {
+          console.error('Voice recognition error:', e);
+          resolve('');
+        }
       };
       this.mediaRecorder.stop();
     });
   },
+  
   speak(text) {
-    if (!('speechSynthesis' in window)) return;
+    if (!('speechSynthesis' in window)) {
+      console.warn('Web Speech API not supported');
+      return;
+    }
     window.speechSynthesis.cancel();
     const clean = prepareForTTS(text);
     if (!clean) return;
     const utter = new SpeechSynthesisUtterance(clean);
-    utter.lang = 'ru-RU';
-    utter.rate = 1;
+    utter.lang = 'ru-RU';    utter.rate = 1;
     window.speechSynthesis.speak(utter);
   },
+  
   stop() {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }
@@ -143,34 +158,43 @@ const Voice = {
 const VoiceNav = {
   isListening: false,
   recognition: null,
+  
   start() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Голосовое управление не поддерживается'); return; }    this.recognition = new SR();
+    if (!SR) {
+      alert('Голосовое управление не поддерживается в этом браузере');
+      return;
+    }
+    this.recognition = new SR();
     this.recognition.lang = 'ru-RU';
     this.recognition.continuous = true;
     this.recognition.interimResults = false;
     this.recognition.onresult = (e) => {
       const text = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
-      console.log('🎤', text);
+      console.log('🎤 Голосовая команда:', text);
       this.handleCommand(text);
     };
-    this.recognition.onerror = (e) => console.error('Voice nav error:', e);
+    this.recognition.onerror = (e) => {
+      console.error('Voice nav error:', e);
+      this.stop();
+    };
     this.recognition.onend = () => {
       if (this.isListening) this.recognition.start();
     };
     this.recognition.start();
     this.isListening = true;
   },
+  
   stop() {
     this.isListening = false;
     if (this.recognition) this.recognition.stop();
   },
+  
   handleCommand(text) {
     if (!RecipeManager.current) return;
     if (/следующий|дальше|далее|вперёд/i.test(text)) {
       RecipeManager.next();
-    } else if (/назад|предыдущий|прошлый/i.test(text)) {
-      RecipeManager.prev();
+    } else if (/назад|предыдущий|прошлый/i.test(text)) {      RecipeManager.prev();
     } else if (/первый|начало/i.test(text)) {
       RecipeManager.step = 0;
       RecipeManager.render();
@@ -194,11 +218,14 @@ const VoiceNav = {
 // ===== RECIPE MANAGER =====
 const RecipeManager = {
   current: null,
-  step: 0,  load(recipe) {
+  step: 0,
+  
+  load(recipe) {
     this.current = recipe;
     this.step = 0;
     this.render();
   },
+  
   render() {
     if (!this.current) return;
     document.getElementById('recipe-title').innerHTML = this.current.title;
@@ -209,14 +236,15 @@ const RecipeManager = {
     document.getElementById('btn-next').textContent =
       this.step === this.current.total - 1 ? '🏁 Готово' : 'Далее ➡️';
   },
+  
   next() {
     if (!this.current) return;
     if (this.step < this.current.total - 1) {
       this.step++;
       this.render();
       Voice.speak(this.current.steps[this.step]);
-    } else showScreen('home');
-  },
+    } else showScreen('home');  },
+  
   prev() {
     if (this.step > 0) {
       this.step--;
@@ -243,11 +271,13 @@ function showScreen(name) {
   if (name === 'profile') loadProfile();
 }
 
-// ===== INIT =====async function init() {
+// ===== INIT =====
+async function init() {
   try {
     const status = await API.getStatus();
     const badge = document.getElementById('user-badge');
     const freeCount = document.getElementById('free-count');
+    
     if (status.subscription) {
       badge.textContent = status.subscription.plan_type;
       freeCount.textContent = '✨ Безлимит';
@@ -257,13 +287,12 @@ function showScreen(name) {
       freeCount.textContent = `Осталось: ${left} из ${status.freeLimit}`;
     }
   } catch (e) {
-    console.error('Init:', e);
+    console.error('Init error:', e);
     document.getElementById('free-count').textContent = 'Ошибка';
   }
 }
 
-// ===== EVENT LISTENERS =====
-document.querySelectorAll('.chip').forEach(c => {
+// ===== EVENT LISTENERS =====document.querySelectorAll('.chip').forEach(c => {
   c.addEventListener('click', () => {
     document.getElementById('dish-input').value = c.dataset.dish;
     tg?.HapticFeedback?.impactOccurred('light');
@@ -292,7 +321,8 @@ document.getElementById('btn-send').addEventListener('click', () => {
 
 document.getElementById('btn-voice').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
-  if (!Voice.isRecording) {    const ok = await Voice.startRecording();
+  if (!Voice.isRecording) {
+    const ok = await Voice.startRecording();
     if (ok) {
       btn.classList.add('recording');
       btn.textContent = '⏹';
@@ -311,10 +341,10 @@ document.getElementById('btn-voice').addEventListener('click', async (e) => {
 
 document.getElementById('btn-generate').addEventListener('click', async () => {
   const portions = document.getElementById('portions').value;
-  const extra = document.getElementById('extra-details').value;
-  const details = `${portions} порций. ${state.prefs.join(', ')}. ${extra}`.trim();
+  const extra = document.getElementById('extra-details').value;  const details = `${portions} порций. ${state.prefs.join(', ')}. ${extra}`.trim();
   showScreen('loading');
   tg?.HapticFeedback?.impactOccurred('light');
+  
   try {
     const recipe = await API.generateRecipe(state.ingredients, details);
     RecipeManager.load(recipe);
@@ -322,9 +352,11 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
     Voice.speak(recipe.steps[0]);
     tg?.HapticFeedback?.notificationOccurred('success');
   } catch (e) {
-    if (e.message.includes('limit_reached')) showScreen('subscription');
-    else {
-      alert('Ошибка: ' + e.message);
+    console.error('Recipe generation error:', e);
+    if (e.message.includes('limit_reached')) {
+      showScreen('subscription');
+    } else {
+      alert('Ошибка: ' + (e.message || 'Не удалось сгенерировать рецепт'));
       showScreen('home');
     }
   }
@@ -341,7 +373,8 @@ document.getElementById('btn-full-recipe').addEventListener('click', () => {
   alert(RecipeManager.current.title.replace(/<[^>]+>/g, '') + '\n\n' + full.replace(/<[^>]+>/g, ''));
 });
 
-// Голосовая навигацияdocument.getElementById('btn-voice-nav').addEventListener('click', (e) => {
+// Голосовая навигация
+document.getElementById('btn-voice-nav').addEventListener('click', (e) => {
   const btn = e.currentTarget;
   if (!VoiceNav.isListening) {
     VoiceNav.start();
@@ -357,14 +390,16 @@ document.getElementById('btn-full-recipe').addEventListener('click', () => {
 
 // ===== ОПЛАТА =====
 window.buyPlan = async (plan) => {
-  state.planToBuy = plan;
-  try {
+  state.planToBuy = plan;  try {
     const info = await API.getPaymentInfo();
     document.getElementById('sbp-phone').textContent = info.sbpPhone;
     document.getElementById('sbp-recipient').textContent = info.recipient;
     document.getElementById('pay-amount').textContent = info.prices[plan];
     showScreen('payment');
-  } catch (e) { alert('Ошибка: ' + e.message); }
+  } catch (e) {
+    console.error('Payment info error:', e);
+    alert('Ошибка: ' + (e.message || 'Не удалось получить информацию об оплате'));
+  }
 };
 
 document.getElementById('btn-upload-receipt').addEventListener('click', async () => {
@@ -375,7 +410,10 @@ document.getElementById('btn-upload-receipt').addEventListener('click', async ()
     alert(`✅ Чек принят!\n📋 Заявка #${res.paymentId}\nОжидайте подтверждения.`);
     showScreen('home');
     init();
-  } catch (e) { alert('Ошибка: ' + e.message); }
+  } catch (e) {
+    console.error('Receipt upload error:', e);
+    alert('Ошибка: ' + (e.message || 'Не удалось загрузить чек'));
+  }
 });
 
 // ===== VIP: WEEK MENU =====
@@ -389,17 +427,18 @@ document.getElementById('btn-generate-weekmenu').addEventListener('click', async
     document.getElementById('weekmenu-text').innerHTML = data.menu.replace(/\n/g, '<br>');
     document.getElementById('weekmenu-result').style.display = 'block';
   } catch (e) {
+    console.error('Week menu error:', e);
     if (e.message.includes('Только для VIP')) {
-      alert('🔒 Эта функция доступна только с VIP подпиской');      showScreen('subscription');
+      alert('🔒 Эта функция доступна только с VIP подпиской');
+      showScreen('subscription');
     } else {
-      alert('Ошибка: ' + e.message);
+      alert('Ошибка: ' + (e.message || 'Не удалось сгенерировать меню'));
     }
   } finally {
     btn.disabled = false;
     btn.textContent = '✨ Составить меню';
   }
 });
-
 // ===== VIP: DIET =====
 document.getElementById('btn-ask-diet').addEventListener('click', async () => {
   const question = document.getElementById('diet-question').value.trim();
@@ -412,11 +451,12 @@ document.getElementById('btn-ask-diet').addEventListener('click', async () => {
     document.getElementById('diet-text').innerHTML = data.answer.replace(/\n/g, '<br>');
     document.getElementById('diet-result').style.display = 'block';
   } catch (e) {
+    console.error('Diet consultation error:', e);
     if (e.message.includes('Только для VIP')) {
       alert('🔒 Эта функция доступна только с VIP подпиской');
       showScreen('subscription');
     } else {
-      alert('Ошибка: ' + e.message);
+      alert('Ошибка: ' + (e.message || 'Не удалось получить ответ'));
     }
   } finally {
     btn.disabled = false;
@@ -432,11 +472,34 @@ async function loadProfile() {
     document.getElementById('profile-username').textContent = data.user?.username ? '@' + data.user.username : '';
     document.getElementById('stat-recipes').textContent = data.user?.free_recipes_used || 0;
     document.getElementById('stat-plan').textContent = data.subscription?.plan_type || 'FREE';
-    document.getElementById('stat-expires').textContent = data.subscription 
+    document.getElementById('stat-expires').textContent = data.subscription
       ? new Date(data.subscription.expires_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
       : '—';
   } catch (e) {
-    console.error('Profile error:', e);
+    console.error('Profile load error:', e);
   }
 }
-init();
+
+// ===== ЗАПУСК =====
+window.addEventListener('load', async () => {
+  // Проверка поддержки Web Speech API
+  if (!('speechSynthesis' in window)) {
+    alert('Ваш браузер не поддерживает озвучку. Используйте Chrome или Safari.');
+  }
+  
+  // Проверка поддержки MediaRecorder
+  if (!('MediaRecorder' in window)) {    alert('Ваш браузер не поддерживает запись голоса. Используйте Chrome или Edge.');
+  }
+  
+  // Инициализация приложения
+  await init();
+  
+  // Автоматический запуск при первом открытии
+  if (tg?.initDataUnsafe?.start_param) {
+    const param = tg.initDataUnsafe.start_param;
+    if (param === 'recipe') {
+      document.getElementById('dish-input').value = 'Паста Карбонара';
+      showScreen('details');
+    }
+  }
+});
