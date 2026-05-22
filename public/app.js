@@ -451,34 +451,114 @@ document.getElementById('btn-generate-weekmenu').addEventListener('click', async
 });
 
 // ===== СКАЧАТЬ PDF =====
+// ===== СКАЧАТЬ PDF =====
 document.getElementById('btn-download-weekmenu').addEventListener('click', async () => {
   const btn = document.getElementById('btn-download-weekmenu');
   const originalText = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading-spinner"></span> Создаём PDF...';
+  btn.innerHTML = '<span class="loading-spinner"></span> Генерируем PDF...';
   
   try {
-    const element = document.getElementById('weekmenu-text');
+    const content = document.getElementById('weekmenu-text').innerHTML;
     
+    // Создаем HTML-документ для PDF
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Меню на неделю</title>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+          }
+          h1 { 
+            color: #667eea; 
+            text-align: center; 
+            margin-bottom: 30px;
+            font-size: 28px;
+          }
+          .day { 
+            margin-bottom: 30px; 
+            border-bottom: 1px solid #eee; 
+            padding-bottom: 20px;
+          }
+          .meal { 
+            margin: 15px 0; 
+          }
+          .meal-title { 
+            font-weight: bold; 
+            color: #667eea; 
+            font-size: 22px;
+            margin-bottom: 10px;
+          }
+          .ingredients { 
+            margin-left: 20px; 
+            margin-bottom: 10px;
+          }          .steps { 
+            margin-left: 20px; 
+            margin-bottom: 10px;
+          }
+          .kcal { 
+            color: #10b981; 
+            font-weight: bold; 
+          }
+          .header {
+            text-align: center;
+            padding: 20px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+          }
+          .header h1 {
+            margin: 0;
+          }
+          .header p {
+            margin-top: 5px;
+            opacity: 0.9;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Меню на неделю</h1>
+          <p>Составлено для вас с учетом ваших предпочтений</p>
+        </div>
+        ${content}
+      </body>
+      </html>
+    `;
+    
+    // Конфигурация PDF
     const opt = {
       margin: [10, 10, 10, 10],
-      filename: `menu-${new Date().toISOString().split('T')[0]}.pdf`,
+      filename: `меню-на-неделю-${new Date().toISOString().split('T')[0]}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { 
         scale: 2, 
         useCORS: true,
         logging: false,
-        backgroundColor: '#0a0a0f'
+        backgroundColor: '#ffffff'
       },
       jsPDF: { 
         unit: 'mm', 
         format: 'a4', 
-        orientation: 'portrait' 
-      },
+        orientation: 'portrait'       },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
     
-    await html2pdf().set(opt).from(element).save();
+    // Генерация PDF
+    const { jsPDF } = html2pdf();
+    const pdf = new jsPDF(opt.jsPDF);
+    
+    // Добавляем HTML в PDF
+    await html2pdf().from(htmlContent).set(opt).toPdf().get('pdf').save(opt.filename);
     
     tg?.HapticFeedback?.notificationOccurred('success');
     toast('📄 PDF сохранён!');
@@ -491,6 +571,7 @@ document.getElementById('btn-download-weekmenu').addEventListener('click', async
     btn.innerHTML = originalText;
   }
 });
+ 
 
 // ===== ПЕЧАТЬ =====
 document.getElementById('btn-print-weekmenu').addEventListener('click', () => {
