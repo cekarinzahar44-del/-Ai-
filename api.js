@@ -6,6 +6,7 @@ const ExcelJS = require('exceljs');
 const { validateTelegramAuth } = require('./auth');
 const { callGigaChat } = require('./gigachat');
 const { transcribeVoice } = require('./stt');
+
 const router = express.Router();
 
 // ===== КОНСТАНТЫ =====
@@ -16,7 +17,7 @@ const SBP_PHONE = process.env.SBP_PHONE || '+79022231321';
 const SBP_RECIPIENT = process.env.SBP_RECIPIENT || 'Ермачкова Алина В.';
 const ADMIN_ID = parseInt(process.env.ADMIN_ID) || 0;
 
-// ===== Папка для чеков (создаём если нет) =====
+// ===== Папка для чеков =====
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
@@ -31,7 +32,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ===== USER AUTH MIDDLEWARE (применяется ко всем роутам) =====
+// ===== USER AUTH MIDDLEWARE =====
 router.use((req, res, next) => {
   const initData = req.header('x-telegram-init-data');
   if (!initData) return res.status(401).json({ error: 'No initData' });
@@ -46,12 +47,10 @@ const adminAuth = (req, res, next) => {
   if (!ADMIN_ID) return res.status(403).json({ error: 'Admin not configured' });
   if (req.telegramUser?.id !== ADMIN_ID) {
     return res.status(403).json({ error: 'Admin only' });
-  }
-  next();};
+  }  next();
+};
 
-// ============================================
-// 🧰 HELPERS
-// ============================================
+// ===== HELPERS =====
 function detectRequestType(text) {
   const lower = text.toLowerCase();
   const keywords = [
@@ -84,25 +83,21 @@ function parseSteps(fullText) {
 function cleanHtml(text) {
   if (!text) return '';
   let safe = text
-    .replace(/`html/gi, '').replace(/`/g, '')
+    .replace(/```html/gi, '').replace(/```/g, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/ /g, ' ')
+    .replace(/&nbsp;/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const headings = ['🍽', '📝', '🔥', '👨‍🍳', '🍷', '📊', '⏱', '💡'];
   headings.forEach(emoji => {
     const escaped = emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escaped}[^\\n]+)`, 'g');
+    const regex = new RegExp(`(${escaped}[^\n]+)`, 'g');
     safe = safe.replace(regex, '<b>$1</b>');
   });
   const open = (safe.match(/<b>/g) || []).length;
-  const close = (safe.match(/<\/b>/g) || []).length;  if (open !== close) return safe.replace(/<\/?b>/g, '');
-  return safe;
+  const close = (safe.match(/<\/b>/g) || []).length;
+  if (open !== close) return safe.replace(/<\/?b>/g, '');  return safe;
 }
-
-// ============================================
-// 🧑 ПОЛЬЗОВАТЕЛЬСКИЕ ЭНДПОИНТЫ
-// ============================================
 
 // ===== STATUS =====
 router.get('/recipe/status', async (req, res) => {
@@ -145,11 +140,11 @@ router.post('/recipe/generate', async (req, res) => {
 
     if (!sub && user.free_recipes_used >= FREE_LIMIT) {
       return res.status(403).json({
-        error: 'limit_reached',        message: 'Лимит исчерпан',
+        error: 'limit_reached',
+        message: 'Лимит исчерпан',
         prices: { PRO: PRO_PRICE, VIP: VIP_PRICE }
       });
     }
-
     const planType = sub?.plan_type || 'FREE';
     const requestType = detectRequestType(ingredients);
     const prompt = buildPrompt(requestType, ingredients, details, planType);
@@ -194,12 +189,12 @@ router.get('/payment/info', (req, res) => {
     sbpPhone: SBP_PHONE,
     recipient: SBP_RECIPIENT,
     prices: { PRO: PRO_PRICE, VIP: VIP_PRICE }
-  });});
+  });
+});
 
-// ===== UPLOAD RECEIPT (ИСПРАВЛЕНО) =====
+// ===== UPLOAD RECEIPT =====
 router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {    if (!req.file) return res.status(400).json({ error: 'No file' });
     const tgId = req.telegramUser.id;
     const { planType } = req.body;
     const amount = planType === 'VIP' ? VIP_PRICE : PRO_PRICE;
@@ -207,7 +202,6 @@ router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
 
     console.log(`📥 Загрузка чека от ${tgId}:`, req.file.filename);
 
-    // Сохраняем платёж в БД
     const { rows: [payment] } = await global.pool.query(
       `INSERT INTO payments (user_id, amount, receipt_file_path, status, plan_type)
        VALUES ($1,$2,$3,'pending',$4) RETURNING id, created_at`,
@@ -243,17 +237,15 @@ router.post('/payment/upload', upload.single('receipt'), async (req, res) => {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '✅ Одобрить', callback_data: `approve_${payment.id}` },            { text: '❌ Отклонить', callback_data: `reject_${payment.id}` }
+            { text: '✅ Одобрить', callback_data: `approve_${payment.id}` },
+            { text: '❌ Отклонить', callback_data: `reject_${payment.id}` }
           ],
           [
             { text: '🌐 Веб-админка', web_app: { url: `${process.env.MINI_APP_URL || ''}/admin.html` } }
           ]
-        ]
-      };
+        ]      };
 
-      // 🔥 ИСПРАВЛЕНО: используем абсолютный путь напрямую от multer
       const fullPath = req.file.path;
-
       console.log('📸 Путь к файлу:', fullPath);
       console.log('📸 Файл существует:', fs.existsSync(fullPath));
 
@@ -292,15 +284,15 @@ router.get('/user/fullprofile', async (req, res) => {
     const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
-      [tgId]    );
+      [tgId]
+    );
     const { rows: [{ count }] } = await global.pool.query(
       `SELECT COUNT(*) FROM payments WHERE user_id=$1 AND status='approved'`,
       [tgId]
     );
     res.json({
       user,
-      subscription: sub || null,
-      approvedPayments: parseInt(count) || 0
+      subscription: sub || null,      approvedPayments: parseInt(count) || 0
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -341,19 +333,15 @@ router.post('/vip/diet', async (req, res) => {
       return res.status(403).json({ error: 'Только для VIP' });
     }
     const system = `Ты профессиональный диетолог с 20-летним опытом. Отвечай подробно, научно обоснованно, но простым языком. Используй структуру с эмодзи.`;
-    const answer = await callGigaChat(system, question);    res.json({ answer: cleanHtml(answer) });
+    const answer = await callGigaChat(system, question);
+    res.json({ answer: cleanHtml(answer) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ============================================
-// 👨‍💼 АДМИНСКИЕ ЭНДПОИНТЫ
-// ============================================
-
 // ===== ADMIN: СТАТИСТИКА =====
-router.get('/admin/stats', adminAuth, async (req, res) => {
-  try {
+router.get('/admin/stats', adminAuth, async (req, res) => {  try {
     const { rows: [basic] } = await global.pool.query(`
       SELECT 
         (SELECT COUNT(*) FROM users) as total_users,
@@ -391,6 +379,7 @@ router.get('/admin/stats', adminAuth, async (req, res) => {
       WHERE s.is_active = TRUE AND s.expires_at BETWEEN NOW() AND NOW() + INTERVAL '7 days'
       ORDER BY s.expires_at ASC
     `);
+
     res.json({ basic, regChart, revChart, expiring, prices: { PRO: PRO_PRICE, VIP: VIP_PRICE } });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -401,8 +390,7 @@ router.get('/admin/stats', adminAuth, async (req, res) => {
 router.get('/admin/payments', adminAuth, async (req, res) => {
   try {
     const { status, plan_type, page = 1, limit = 20 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    let where = 'WHERE 1=1';
+    const offset = (parseInt(page) - 1) * parseInt(limit);    let where = 'WHERE 1=1';
     const params = [];
     let idx = 1;
 
@@ -439,6 +427,7 @@ router.get('/admin/payments', adminAuth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 // ===== ADMIN: ПОЛЬЗОВАТЕЛИ =====
 router.get('/admin/users', adminAuth, async (req, res) => {
   try {
@@ -450,8 +439,7 @@ router.get('/admin/users', adminAuth, async (req, res) => {
 
     if (search) {
       where += ` AND (u.first_name ILIKE $${idx} OR u.username ILIKE $${idx} OR u.tg_id::text LIKE $${idx})`;
-      params.push(`%${search}%`);
-      idx++;
+      params.push(`%${search}%`);      idx++;
     }
     if (plan && plan !== 'all') {
       if (plan === 'FREE') {
@@ -488,7 +476,8 @@ router.get('/admin/users', adminAuth, async (req, res) => {
   }
 });
 
-// ===== ADMIN: ПРОСМОТР ЮЗЕРА =====router.get('/admin/user/:tgId', adminAuth, async (req, res) => {
+// ===== ADMIN: ПРОСМОТР ЮЗЕРА =====
+router.get('/admin/user/:tgId', adminAuth, async (req, res) => {
   try {
     const { tgId } = req.params;
     const { rows: [user] } = await global.pool.query(
@@ -499,9 +488,7 @@ router.get('/admin/users', adminAuth, async (req, res) => {
       `SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY starts_at DESC`, [tgId]
     );
     const { rows: payments } = await global.pool.query(
-      `SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC`, [tgId]
-    );
-
+      `SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC`, [tgId]    );
     res.json({ user, subscriptions: subs, payments });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -530,14 +517,14 @@ router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
       `UPDATE users SET free_recipes_used=0 WHERE tg_id=$1`, [tgId]
     );
 
-    // Уведомление пользователю
     try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
       await notifyBot.telegram.sendMessage(
         parseInt(tgId),
         `🎉 <b>Администратор выдал вам ${planType}!</b>\n📅 До: ${expiresAt.toLocaleDateString('ru-RU')}`,
-        { parse_mode: 'HTML' }      );
+        { parse_mode: 'HTML' }
+      );
     } catch (e) {
       console.error('Notify user error:', e.message);
     }
@@ -550,8 +537,7 @@ router.post('/admin/user/:tgId/plan', adminAuth, async (req, res) => {
 
 // ===== ADMIN: БАН =====
 router.post('/admin/user/:tgId/ban', adminAuth, async (req, res) => {
-  try {
-    const { tgId } = req.params;
+  try {    const { tgId } = req.params;
     const { banned = true } = req.body;
     await global.pool.query(`
       DO $$ BEGIN
@@ -578,7 +564,7 @@ router.post('/admin/user/:tgId/ban', adminAuth, async (req, res) => {
   }
 });
 
-// ===== ADMIN: ОДОБРИТЬ ПЛАТЕЖ ВРУЧНУЮ =====
+// ===== ADMIN: ОДОБРИТЬ ПЛАТЕЖ =====
 router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -586,7 +572,8 @@ router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
       `SELECT * FROM payments WHERE id=$1`, [id]
     );
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
-    const expiresAt = new Date();    expiresAt.setDate(expiresAt.getDate() + 30);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
 
     await global.pool.query(
       `UPDATE subscriptions SET is_active=FALSE WHERE user_id=$1`,
@@ -599,12 +586,10 @@ router.post('/admin/payment/:id/approve', adminAuth, async (req, res) => {
     await global.pool.query(
       `UPDATE users SET free_recipes_used=0 WHERE tg_id=$1`,
       [payment.user_id]
-    );
-    await global.pool.query(
+    );    await global.pool.query(
       `UPDATE payments SET status='approved' WHERE id=$1`, [id]
     );
 
-    // Уведомление пользователю
     try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
@@ -635,7 +620,7 @@ router.post('/admin/payment/:id/reject', adminAuth, async (req, res) => {
       `UPDATE payments SET status='rejected' WHERE id=$1`, [id]
     );
 
-    // Уведомление пользователю    try {
+    try {
       const { Telegraf } = require('telegraf');
       const notifyBot = new Telegraf(process.env.BOT_TOKEN);
       await notifyBot.telegram.sendMessage(
@@ -650,8 +635,7 @@ router.post('/admin/payment/:id/reject', adminAuth, async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
+  }});
 
 // ===== ADMIN: PENDING =====
 router.get('/admin/pending', adminAuth, async (req, res) => {
@@ -667,7 +651,7 @@ router.get('/admin/pending', adminAuth, async (req, res) => {
   }
 });
 
-// ===== ADMIN: ЭКСПОРТ В EXCEL =====
+// ===== ADMIN: ЭКСПОРТ =====
 router.get('/admin/export/:type', adminAuth, async (req, res) => {
   try {
     const { type } = req.params;
@@ -684,7 +668,8 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         ORDER BY u.created_at DESC
       `);
       const sheet = workbook.addWorksheet('Пользователи');
-      sheet.columns = [        { header: 'TG ID', key: 'tg_id', width: 15 },
+      sheet.columns = [
+        { header: 'TG ID', key: 'tg_id', width: 15 },
         { header: 'Username', key: 'username', width: 20 },
         { header: 'Имя', key: 'first_name', width: 20 },
         { header: 'Рецептов', key: 'free_recipes_used', width: 12 },
@@ -694,17 +679,12 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         { header: 'Регистрация', key: 'created_at', width: 20 }
       ];
       sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      sheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF667EEA' }
-      };
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
       rows.forEach(r => {
         sheet.addRow({
           tg_id: r.tg_id,
           username: r.username || '-',
-          first_name: r.first_name || '-',
-          free_recipes_used: r.free_recipes_used || 0,
+          first_name: r.first_name || '-',          free_recipes_used: r.free_recipes_used || 0,
           plan_type: r.plan_type || 'FREE',
           is_active: r.is_active ? '✅' : '❌',
           expires_at: r.expires_at ? new Date(r.expires_at).toLocaleDateString('ru-RU') : '-',
@@ -731,10 +711,7 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         { header: 'Чек', key: 'receipt_file_path', width: 40 }
       ];
       sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      sheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',        fgColor: { argb: 'FF667EEA' }
-      };
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
       rows.forEach(r => {
         sheet.addRow({
           id: r.id,
@@ -756,8 +733,7 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         FROM subscriptions s JOIN users u ON s.user_id = u.tg_id
         ORDER BY s.starts_at DESC
       `);
-      const sheet = workbook.addWorksheet('Подписки');
-      sheet.columns = [
+      const sheet = workbook.addWorksheet('Подписки');      sheet.columns = [
         { header: 'ID', key: 'id', width: 8 },
         { header: 'TG ID', key: 'user_id', width: 15 },
         { header: 'Username', key: 'username', width: 20 },
@@ -768,11 +744,7 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
         { header: 'Активна', key: 'is_active', width: 10 }
       ];
       sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      sheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF667EEA' }
-      };
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
       rows.forEach(r => {
         sheet.addRow({
           id: r.id,
@@ -782,7 +754,8 @@ router.get('/admin/export/:type', adminAuth, async (req, res) => {
           plan_type: r.plan_type,
           starts_at: new Date(r.starts_at).toLocaleDateString('ru-RU'),
           expires_at: new Date(r.expires_at).toLocaleDateString('ru-RU'),
-          is_active: r.is_active ? '✅' : '❌'        });
+          is_active: r.is_active ? '✅' : '❌'
+        });
       });
 
     } else {
