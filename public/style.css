@@ -864,3 +864,86 @@ textarea::placeholder, input::placeholder { color: var(--text-muted); font-weigh
 @media (max-width: 480px) {
   .result-actions { flex-wrap: wrap; }
 }
+
+/* ══════════════════════════════
+   WEEK MENU — ПОШАГОВЫЙ ВИД
+══════════════════════════════ */
+.wm-progress-wrap {
+  margin-bottom: 14px;
+}
+.wm-progress-meta {
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 7px;
+  text-align: center;
+}
+.wm-progress-track {
+  height: 4px; background: var(--surface-3);
+  border-radius: 2px; overflow: hidden;
+}
+.wm-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-light), var(--honey));
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+}
+
+.wm-day-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 22px 18px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-md);
+  position: relative; overflow: hidden;
+  max-height: 55vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.wm-day-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-light), var(--accent), var(--honey));
+}
+
+.wm-day-title {
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 700; font-style: italic;
+  color: var(--accent-deep);
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wm-day-content {
+  font-size: 14px; line-height: 1.75;
+  color: var(--text);
+}
+
+/* Приёмы пищи внутри дня */
+.meal-type {
+  font-weight: 700; font-size: 15px;
+  color: var(--accent-deep);
+  margin: 14px 0 4px;
+  padding: 6px 10px;
+  background: var(--accent-dim);
+  border-radius: var(--r-sm);
+  border-left: 3px solid var(--accent);
+}
+.meal-type.snack {
+  color: #5a7a1a;
+  background: rgba(90,122,26,0.1);
+  border-left-color: #7aaa2a;
+}
+.kcal-line {
+  font-size: 12px; color: var(--text-muted);
+  font-style: italic; margin-top: 8px;
+  padding: 4px 8px;
+  background: var(--honey-dim);
+  border-radius: var(--r-sm);
+  display: inline-block;
+}
+
+.wm-nav {
+  display: flex; gap: 10px;
+  margin-bottom: 10px;
+}
