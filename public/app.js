@@ -402,220 +402,318 @@ document.getElementById('btn-upload-receipt').addEventListener('click', async ()
   }
 });
 
-// ===== VIP: WEEK MENU =====
-// ===== VIP: WEEK MENU =====
+// ===== VIP: WEEK MENU — ПОШАГОВЫЙ РЕЖИМ =====
+
+// Хранилище распарсенного меню по дням
+const WeekMenu = {
+  days: [],      // [{title, content}]
+  current: 0,
+
+  // Парсим текст меню в массив дней
+  parse(rawText) {
+    // Разбиваем по дням — ищем паттерны: "Понедельник", "День 1", "ДЕНЬ 1", "📅", цифра + день недели
+    const dayNames = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
+    const lines = rawText.split(/\n/);
+    const days = [];
+    let current = null;
+
+    lines.forEach(line => {
+      const clean = line.replace(/<[^>]+>/g, '').trim();
+      const lower = clean.toLowerCase();
+
+      // Проверяем: это заголовок дня?
+      const isDayHeader = dayNames.some(d => lower.includes(d))
+        || /^(день|day)\s*\d+/i.test(clean)
+        || /^📅/.test(clean)
+        || /^\d+\s*(день|day)/i.test(clean);
+
+      if (isDayHeader && clean.length < 60) {
+        if (current) days.push(current);
+        current = { title: clean.replace(/^[📅\s]+/, ''), lines: [] };
+      } else if (current && clean) {
+        current.lines.push(line);
+      } else if (!current && clean) {
+        // До первого дня — игнорируем или создаём вводный блок
+      }
+    });
+    if (current) days.push(current);
+
+    // Если не распарсилось по дням — делим на 7 равных частей
+    if (days.length < 3) {
+      const allLines = lines.filter(l => l.replace(/<[^>]+>/g,'').trim());
+      const chunk = Math.ceil(allLines.length / 7);
+      const weekDays = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
+      return weekDays.map((title, i) => ({
+        title,
+        content: allLines.slice(i * chunk, (i+1) * chunk).join('\n')
+      }));
+    }
+
+    return days.map(d => ({ title: d.title, content: d.lines.join('\n') }));
+  },
+
+  load(rawText) {
+    this.days = this.parse(rawText);
+    this.current = 0;
+    this.render();
+  },
+
+  render() {
+    if (!this.days.length) return;
+    const day = this.days[this.current];
+    const total = this.days.length;
+    const pct = Math.round(((this.current + 1) / total) * 100);
+
+    // Прогресс
+    const fill = document.getElementById('wm-progress-fill');
+    const meta = document.getElementById('wm-progress-meta');
+    if (fill) fill.style.width = pct + '%';
+    if (meta) meta.textContent = `День ${this.current + 1} из ${total}`;
+
+    // Заголовок дня
+    const titleEl = document.getElementById('wm-day-title');
+    if (titleEl) titleEl.textContent = day.title;
+
+    // Контент дня — форматируем красиво
+    const contentEl = document.getElementById('wm-day-content');
+    if (contentEl) {
+      let html = day.content
+        .replace(/\n/g, '<br>')
+        .replace(/(<b>[^<]+<\/b>)/g, '$1')  // сохраняем bold
+        // Завтрак/Обед/Ужин — выделяем заголовки приёмов пищи
+        .replace(/(🌅|🍳|☀️)([^<\n<br>]+)/g, '<div class="meal-header breakfast">$1$2</div>')
+        .replace(/(🥗|🍲|🌞|🍽)([^<\n<br>]+)/g, '<div class="meal-header lunch">$1$2</div>')
+        .replace(/(🌙|🍴|🌛)([^<\n<br>]+)/g, '<div class="meal-header dinner">$1$2</div>')
+        // Завтрак/Обед/Ужин текстом
+        .replace(/(Завтрак[^<:]*:?)/gi, '<div class="meal-type">🌅 $1</div>')
+        .replace(/(Обед[^<:]*:?)/gi, '<div class="meal-type">☀️ $1</div>')
+        .replace(/(Ужин[^<:]*:?)/gi, '<div class="meal-type">🌙 $1</div>')
+        .replace(/(Перекус[^<:]*:?)/gi, '<div class="meal-type snack">🍎 $1</div>')
+        .replace(/(КБЖУ[^<\n]*)/gi, '<div class="kcal-line">$1</div>');
+      contentEl.innerHTML = html;
+    }
+
+    // Кнопки навигации
+    const btnPrev = document.getElementById('wm-btn-prev');
+    const btnNext = document.getElementById('wm-btn-next');
+    if (btnPrev) btnPrev.disabled = this.current === 0;
+    if (btnNext) {
+      if (this.current === total - 1) {
+        btnNext.textContent = '🏁 Готово';
+        btnNext.onclick = () => {
+          document.getElementById('wm-day-view').style.display = 'none';
+          document.getElementById('wm-full-wrap').style.display = 'block';
+        };
+      } else {
+        btnNext.textContent = 'Далее →';
+        btnNext.onclick = () => WeekMenu.next();
+      }
+    }
+
+    // Скролл наверх
+    const card = document.getElementById('wm-day-card');
+    if (card) card.scrollTop = 0;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  next() {
+    if (this.current < this.days.length - 1) {
+      this.current++;
+      this.render();
+      tg?.HapticFeedback?.impactOccurred('light');
+    }
+  },
+
+  prev() {
+    if (this.current > 0) {
+      this.current--;
+      this.render();
+      tg?.HapticFeedback?.impactOccurred('light');
+    }
+  }
+};
+
 document.getElementById('btn-generate-weekmenu').addEventListener('click', async () => {
   const prefs = document.getElementById('weekmenu-prefs').value;
   const btn = document.getElementById('btn-generate-weekmenu');
-  const originalText = btn.textContent;
-  
+  const originalText = btn.innerHTML;
+
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading-spinner"></span> Шеф-повар готовит меню...';
+  btn.innerHTML = '⏳ Шеф составляет меню...';
   tg?.HapticFeedback?.impactOccurred('medium');
-  
+
   try {
     const data = await API.generateWeekMenu(prefs);
-    
-    // Преобразуем HTML в красивый формат
-    const menuHtml = data.menu
-      .replace(/\n/g, '<br>')
-      .replace(/📅\s*/g, '<div class="week-day-header">📅 ')
-      .replace(/(<br>){3,}/g, '<br><br>')
-      .replace(/(ДЕНЬ\s*\d+)/gi, (match) => `</div><div class="week-day-header">${match}`);
-    
-    const weekmenuText = document.getElementById('weekmenu-text');
-    weekmenuText.innerHTML = `
-      <div class="weekmenu-header-card">
-        <div class="weekmenu-title">✨ Персональное меню</div>
-        <div class="weekmenu-subtitle">Составлено специально для вас</div>
-        <div class="weekmenu-date">${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-      </div>
-      <div class="weekmenu-body">${menuHtml}</div>
-    `;
-    
+
+    // Сохраняем сырой текст для скачивания
+    WeekMenu._rawText = data.menu;
+
+    // Показываем пошаговый вид
     document.getElementById('weekmenu-result').style.display = 'block';
-    
-    // Прокрутка к результату
+    document.getElementById('wm-day-view').style.display = 'block';
+    document.getElementById('wm-full-wrap').style.display = 'none';
+
+    // Парсим и отображаем первый день
+    WeekMenu.load(data.menu.replace(/<[^>]+>/g, '\n').replace(/\n{3,}/g, '\n\n'));
+
     setTimeout(() => {
       document.getElementById('weekmenu-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
-    
+
     tg?.HapticFeedback?.notificationOccurred('success');
-    
+
   } catch (e) {
     console.error('Week menu error:', e);
     if (e.message.includes('Только для VIP')) {
-      alert('🔒 Эта функция доступна только с VIP подпиской');
       showScreen('subscription');
     } else {
       alert('Ошибка: ' + e.message);
     }
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
-    btn.disabled = false;    btn.innerHTML = originalText;
+    btn.disabled = false;
+    btn.innerHTML = originalText;
   }
 });
 
-// ===== СКАЧАТЬ PDF =====
-// ===== СКАЧАТЬ PDF =====
+// Навигация по дням
+document.addEventListener('click', function(e) {
+  if (e.target.id === 'wm-btn-next') WeekMenu.next();
+  if (e.target.id === 'wm-btn-prev') WeekMenu.prev();
+  if (e.target.id === 'wm-btn-show-full') {
+    document.getElementById('wm-day-view').style.display = 'none';
+    document.getElementById('wm-full-wrap').style.display = 'block';
+  }
+});
+
+// ===== СКАЧАТЬ КАК ИЗОБРАЖЕНИЕ (PNG) — работает везде =====
 document.getElementById('btn-download-weekmenu').addEventListener('click', async () => {
   const btn = document.getElementById('btn-download-weekmenu');
   const originalText = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '⏳ Генерируем PDF...';
+  btn.innerHTML = '⏳ Создаём картинку...';
 
   try {
-    const content = document.getElementById('weekmenu-text').innerHTML;
-    const filename = `menu-${new Date().toISOString().split('T')[0]}.pdf`;
+    // Создаём временный div с меню для рендеринга
+    const rawText = WeekMenu._rawText || document.getElementById('weekmenu-text').innerText || '';
+    const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const htmlContent = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Меню на неделю</title>
-<style>
-  body { font-family: Arial, sans-serif; line-height: 1.7; color: #2c2420; max-width: 800px; margin: 0 auto; padding: 24px; }
-  .header { text-align:center; padding: 24px; background: linear-gradient(135deg,#d98f78,#c4735a); color:#fff; border-radius:12px; margin-bottom:24px; }
-  .header h1 { margin:0; font-size:26px; }
-  .header p { margin:6px 0 0; opacity:0.9; font-size:14px; }
-  b { color: #c4735a; }
-  br { line-height: 2; }
-</style></head>
-<body>
-  <div class="header">
-    <h1>Меню на неделю</h1>
-    <p>Составлено Шеф-Повар AI · ${new Date().toLocaleDateString('ru-RU', {day:'numeric',month:'long',year:'numeric'})}</p>
-  </div>
-  ${content}
-</body></html>`;
+    const tempDiv = document.createElement('div');
+    tempDiv.style.cssText = [
+      'position:fixed', 'left:-9999px', 'top:0',
+      'width:390px', 'background:#faf7f4',
+      'font-family:Arial,sans-serif', 'padding:0',
+      'box-sizing:border-box', 'z-index:-1'
+    ].join(';');
 
-    const opt = {
-      margin: [10, 10, 10, 10],
-      filename,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-    };
+    tempDiv.innerHTML = `
+      <div style="background:linear-gradient(135deg,#d98f78,#c4735a);padding:28px 24px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#fff;">Меню на неделю</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px;">Шеф-Повар AI · ${date}</div>
+      </div>
+      <div style="padding:20px 20px 28px;line-height:1.7;font-size:14px;color:#2c2420;white-space:pre-wrap;">${
+        rawText.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim()
+      }</div>
+    `;
+    document.body.appendChild(tempDiv);
 
-    // Генерируем Blob, затем скачиваем через <a> — работает в Telegram WebView
-    const pdfBlob = await html2pdf().set(opt).from(htmlContent).outputPdf('blob');
-    const url = URL.createObjectURL(pdfBlob);
+    // Используем html2canvas (входит в состав html2pdf)
+    const canvas = await html2canvas(tempDiv, {
+      scale: 2,
+      backgroundColor: '#faf7f4',
+      useCORS: true,
+      logging: false,
+      width: 390
+    });
+    document.body.removeChild(tempDiv);
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
+    const dataUrl = canvas.toDataURL('image/png');
+    const filename = `menu-${new Date().toISOString().split('T')[0]}.png`;
 
-    // Небольшая задержка перед очисткой
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 3000);
+    const isAndroid = /Android/.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isAndroid) {
+      // Android: открываем картинку в новой вкладке → долгое нажатие → «Сохранить»
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(`<html><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Меню на неделю</title>
+          <style>body{margin:0;background:#1a1a1a;display:flex;flex-direction:column;align-items:center;padding:16px;}
+          img{max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.4);}
+          p{color:#fff;font-family:sans-serif;font-size:14px;margin-top:16px;text-align:center;opacity:0.8;}</style>
+          </head><body>
+          <img src="${dataUrl}" alt="Меню на неделю">
+          <p>Удержи палец на картинке → «Сохранить изображение»</p>
+          </body></html>`);
+        win.document.close();
+      }
+      toast('📸 Удержи палец на картинке → Сохранить!');
+    } else if (isIOS) {
+      // iOS: открываем картинку — Share → «Сохранить в Фото»
+      const win = window.open(dataUrl, '_blank');
+      if (!win) window.location.href = dataUrl;
+      toast('📸 Нажми «Поделиться» → «Сохранить изображение»');
+    } else {
+      // Desktop — прямое скачивание
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      a.click();
+      toast('🖼 Картинка сохранена!');
+    }
 
     tg?.HapticFeedback?.notificationOccurred('success');
-    toast('📄 PDF готов — проверь загрузки!');
 
   } catch (e) {
-    console.error('PDF error:', e);
-    // Fallback: открываем печать браузера как запасной вариант
-    const content = document.getElementById('weekmenu-text').innerHTML;
-    const win = window.open('', '_blank');
-    if (win) {
-      win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Меню на неделю</title>
-      <style>body{font-family:Arial,sans-serif;padding:20px;line-height:1.7;color:#333;}b{color:#c4735a;}</style>
-      </head><body>${content}<script>window.onload=function(){window.print();}<\/script></body></html>`);
-      win.document.close();
-      toast('🖨 Используй «Сохранить как PDF» в меню печати');
-    } else {
-      alert('Не удалось создать PDF. Попробуй кнопку «Печать».');
-    }
+    console.error('Image error:', e);
+    alert('Ошибка: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalText;
   }
 });
- 
 
 // ===== ПЕЧАТЬ =====
 document.getElementById('btn-print-weekmenu').addEventListener('click', () => {
-  const printContent = document.getElementById('weekmenu-text').innerHTML;
-  const printWindow = window.open('', '_blank');  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>Меню на неделю</title>
-      <style>
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          padding: 20px;
-          line-height: 1.6;
-          color: #1a1a24;
-          max-width: 800px;
-          margin: 0 auto;
-        }
-        .weekmenu-header-card {
-          text-align: center;
-          padding: 30px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 16px;
-          margin-bottom: 30px;
-        }
-        .weekmenu-title { font-size: 28px; font-weight: 800; }
-        .weekmenu-subtitle { font-size: 16px; opacity: 0.9; margin-top: 8px; }
-        .weekmenu-date { font-size: 14px; opacity: 0.8; margin-top: 8px; }
-        .week-day-header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 12px 16px;
-          border-radius: 10px;
-          font-weight: 700;
-          font-size: 18px;
-          margin: 20px 0 12px;
-          page-break-after: avoid;
-        }
-        b { color: #667eea; }
-        h2 { font-size: 28px; margin-bottom: 16px; }
-        @media print {
-          .week-day-header { page-break-before: auto; }
-          body { padding: 0; }
-        }
-      </style>
-    </head>
-    <body>${printContent}</body>
-    </html>
-  `);
+  const raw = WeekMenu._rawText || '';
+  const text = raw.replace(/<[^>]+>/g, '').trim();
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) { alert('Разреши всплывающие окна'); return; }
+  printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Меню на неделю</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:24px;line-height:1.75;color:#2c2420;max-width:700px;margin:0 auto;}
+      .hdr{text-align:center;padding:20px;background:linear-gradient(135deg,#d98f78,#c4735a);color:#fff;border-radius:10px;margin-bottom:24px;}
+      .hdr h1{margin:0;font-size:22px;} .hdr p{margin:4px 0 0;font-size:13px;opacity:.9;}
+      pre{white-space:pre-wrap;font-family:inherit;font-size:14px;}
+      @media print{body{padding:0;}.hdr{border-radius:0;}}
+    </style></head><body>
+    <div class="hdr"><h1>Меню на неделю</h1>
+    <p>Шеф-Повар AI · ${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</p></div>
+    <pre>${text}</pre>
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`);
   printWindow.document.close();
-  setTimeout(() => {
-    printWindow.print();    printWindow.close();
-  }, 500);
 });
 
 // ===== ПОДЕЛИТЬСЯ =====
 document.getElementById('btn-share-weekmenu').addEventListener('click', async () => {
-  const text = document.getElementById('weekmenu-text').innerText;
-  
+  const raw = WeekMenu._rawText || '';
+  const text = raw.replace(/<[^>]+>/g, '').trim();
+  const shareText = text.substring(0, 1500) + (text.length > 1500 ? '...' : '') + '\n\n📱 Шеф-Повар AI';
   if (navigator.share) {
-    try {
-      await navigator.share({
-        title: 'Моё меню на неделю от Шеф-Повар AI',
-        text: text.substring(0, 1000) + '...\n\n📱 Составлено в приложении Шеф-Повар AI'
-      });
-    } catch (e) {
-      console.log('Share cancelled');
-    }
+    try { await navigator.share({ title: 'Моё меню на неделю', text: shareText }); }
+    catch(e) { /* отменено */ }
   } else {
-    // Fallback: копируем в буфер
     try {
-      await navigator.clipboard.writeText(text);
-      toast('📋 Скопировано в буфер!');
-      tg?.HapticFeedback?.notificationOccurred('success');
-    } catch (e) {
-      alert('Не удалось скопировать');
-    }
+      await navigator.clipboard.writeText(shareText);
+      toast('📋 Меню скопировано!');
+    } catch(e) { alert('Не удалось скопировать'); }
   }
 });
+
 
 // ===== TOAST (если ещё нет) =====
 function toast(message, type = 'success') {
