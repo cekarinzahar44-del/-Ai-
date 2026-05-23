@@ -399,10 +399,12 @@
       <h2 class="screen-title">Меню на неделю</h2>
     </div>
     <div class="form-wrap">
+
+      <!-- Форма генерации -->
       <div class="vip-card">
         <span class="vip-card-icon">&#x1F5D3;</span>
         <h3>Персональное меню</h3>
-        <p class="hint" style="margin-bottom:18px;text-align:left;">ИИ составит меню на 7 дней с учётом твоих предпочтений</p>
+        <p class="hint" style="margin-bottom:18px;text-align:left;">ИИ составит меню на 7 дней — листай по дням как рецепт</p>
         <div class="form-block">
           <div class="form-label">Предпочтения и ограничения</div>
           <div class="textarea-wrap">
@@ -411,13 +413,51 @@
         </div>
         <button id="btn-generate-weekmenu" class="primary-btn gold-btn full-btn">&#x2728; Составить меню</button>
       </div>
-      <div id="weekmenu-result" class="result-block" style="display:none;">
-        <div class="result-actions">
-          <button id="btn-download-weekmenu" class="primary-btn gold-btn">&#x1F4C4; PDF</button>
-          <button id="btn-print-weekmenu" class="ghost-btn">&#x1F5A8; Печать</button>
-          <button id="btn-share-weekmenu" class="ghost-btn">&#x1F4E4; Поделиться</button>
+
+      <!-- Результат -->
+      <div id="weekmenu-result" style="display:none;">
+
+        <!-- Пошаговый вид по дням -->
+        <div id="wm-day-view">
+          <!-- Прогресс -->
+          <div class="wm-progress-wrap">
+            <div class="wm-progress-meta" id="wm-progress-meta">День 1 из 7</div>
+            <div class="wm-progress-track">
+              <div class="wm-progress-fill" id="wm-progress-fill" style="width:14%"></div>
+            </div>
+          </div>
+
+          <!-- Карточка дня -->
+          <div class="wm-day-card" id="wm-day-card">
+            <div class="wm-day-title" id="wm-day-title">Понедельник</div>
+            <div class="wm-day-content" id="wm-day-content"></div>
+          </div>
+
+          <!-- Навигация -->
+          <div class="wm-nav">
+            <button class="nav-btn" id="wm-btn-prev" onclick="WeekMenu.prev()" disabled>&#x2190; Назад</button>
+            <button class="nav-btn accent" id="wm-btn-next" onclick="WeekMenu.next()">Далее &#x2192;</button>
+          </div>
+
+          <!-- Кнопка показать полное меню -->
+          <button class="ghost-btn full-btn" id="wm-btn-show-full" onclick="document.getElementById('wm-day-view').style.display='none';document.getElementById('wm-full-wrap').style.display='block'">
+            &#x1F4CB; Показать полное меню
+          </button>
         </div>
-        <div id="weekmenu-text" class="result-content"></div>
+
+        <!-- Полное меню + кнопки скачивания -->
+        <div id="wm-full-wrap" style="display:none;">
+          <button class="back-btn" style="margin-bottom:14px;" onclick="document.getElementById('wm-day-view').style.display='block';document.getElementById('wm-full-wrap').style.display='none'">
+            &#x2190; По дням
+          </button>
+          <div class="result-actions">
+            <button id="btn-download-weekmenu" class="primary-btn gold-btn">&#x1F5BC; Картинка</button>
+            <button id="btn-print-weekmenu" class="ghost-btn">&#x1F5A8; Печать</button>
+            <button id="btn-share-weekmenu" class="ghost-btn">&#x1F4E4; Поделиться</button>
+          </div>
+          <div id="weekmenu-text" class="result-content" style="margin-top:14px;"></div>
+        </div>
+
       </div>
     </div>
   </div>
