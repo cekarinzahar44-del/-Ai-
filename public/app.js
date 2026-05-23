@@ -144,9 +144,10 @@ const Voice = {
 };
 
 // ===== ГОЛОСОВАЯ НАВИГАЦИЯ =====
+// ===== ГОЛОСОВАЯ НАВИГАЦИЯ =====
 const VoiceNav = {
-  isListening: false,  recognition: null,
-  
+  isListening: false,
+  recognition: null,
   start() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Голосовое управление не поддерживается'); return; }
@@ -166,14 +167,46 @@ const VoiceNav = {
     this.recognition.start();
     this.isListening = true;
   },
-  
   stop() {
     this.isListening = false;
     if (this.recognition) this.recognition.stop();
   },
-  
   handleCommand(text) {
-    if (!RecipeManager.current) return;
+    // Если пользователь приветствует, запускаем микрофон
+    if (/привет шеф|привет|здравствуй/i.test(text)) {
+      const success = Voice.startRecording();
+      if (success) {
+        const userName = tg?.initDataUnsafe?.user?.first_name || 'пользователь';
+        Voice.speak(`Здравствуйте, ${userName}! Готов приготовить для вас блюдо.`);
+      }
+      return;
+    }
+    
+    // Обработка команды "шеф давай приготовим [блюдо]"
+    if (/шеф\s*(давай\s*)?приготовим\s+/i.test(text)) {
+      const dish = text.replace(/шеф\s*(давай\s*)?приготовим\s+/i, '').trim();
+      if (dish) {
+        document.getElementById('dish-input').value = dish;
+        showScreen('details');
+      }
+      return;
+    }
+    
+    // Стандартные команды
+    if (!RecipeManager.current) {
+      // Если пользователь говорит о блюде, генерируем рецепт
+      if (/приготовить|сделай|дай|давай|приготовим/i.test(text)) {
+        const dishMatch = text.match(/(?:приготовить|сделай|дай|давай|приготовим)\s+(.+?)(?:\s|$)/i);
+        if (dishMatch && dishMatch[1]) {
+          const dish = dishMatch[1].trim();
+          document.getElementById('dish-input').value = dish;
+          showScreen('details');
+          return;
+        }
+      }
+    }
+    
+    // Стандартные команды
     if (/следующий|дальше|далее|вперёд/i.test(text)) {
       RecipeManager.next();
     } else if (/назад|предыдущий|прошлый/i.test(text)) {
@@ -194,8 +227,10 @@ const VoiceNav = {
       Voice.speak(RecipeManager.current.steps[RecipeManager.step]);
     } else if (/стоп|выход|закрыть|хватит/i.test(text)) {
       showScreen('home');
-    }  }
+    }
+  }
 };
+    
 
 // ===== RECIPE MANAGER =====
 const RecipeManager = {
