@@ -947,3 +947,48 @@ textarea::placeholder, input::placeholder { color: var(--text-muted); font-weigh
   display: flex; gap: 10px;
   margin-bottom: 10px;
 }
+
+/* ===== WEEK MENU LEVEL SELECTOR ===== */
+.wm-level-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.wm-level-btn {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 2px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.wm-level-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.wm-level-icon {
+  grid-row: 1 / 3;
+  font-size: 22px;
+  text-align: center;
+}
+.wm-level-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  line-height: 1.2;
+}
+.wm-level-btn.active .wm-level-name {
+  color: var(--accent-deep);
+}
+.wm-level-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
