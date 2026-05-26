@@ -2776,3 +2776,154 @@ textarea::placeholder, input::placeholder { color: var(--text-muted); font-weigh
 @keyframes onbFadeOut {
   to { opacity: 0; transform: scale(0.97); }
 }
+
+/* ============================================================
+   ОНБОРДИНГ — СЛАЙД 4 (АЛЛЕРГИИ)
+   ============================================================ */
+.onb-bg-4 {
+  background: radial-gradient(ellipse at 50% 25%, rgba(120,217,180,0.22) 0%, transparent 60%),
+              radial-gradient(ellipse at 80% 80%, rgba(255,200,150,0.12) 0%, transparent 50%);
+}
+
+.onb-form {
+  width: 100%;
+  text-align: left;
+  margin-top: 6px;
+}
+.onb-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 8px;
+  letter-spacing: 0.2px;
+}
+.onb-form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 6px 0 4px;
+  text-align: center;
+}
+.onb-form .textarea-wrap textarea {
+  font-size: 14px;
+  min-height: 56px;
+}
+
+/* Чипы быстрого выбора аллергий */
+.onb-allergy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.onb-allergy-chip {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+}
+.onb-allergy-chip:active { transform: scale(0.95); }
+.onb-allergy-chip.active {
+  background: linear-gradient(135deg, #e57373, #d04545);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(208,69,69,0.3);
+}
+
+/* Gift badge (подарок) рядом с пунктом меню "Меню на неделю" */
+.gift-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: #fff;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(196,150,90,0.3);
+}
+
+/* Primary вариант extra-btn — для списка покупок */
+.extra-btn-primary {
+  background: linear-gradient(135deg, var(--accent-dim), #fff);
+  border-color: var(--accent) !important;
+  border-width: 1.5px !important;
+}
+.extra-btn-primary .extra-icon {
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: #fff;
+}
+.extra-btn-primary b { color: var(--accent-deep); }
+.extra-arrow {
+  margin-left: auto;
+  color: var(--accent-deep);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* Кнопка "Сохранить" внутри модалки — корректный отступ */
+.modal-box .primary-btn { width: 100%; }
+
+/* ============================================================
+   БАННЕРЫ НА ЭКРАНЕ МЕНЮ НА НЕДЕЛЮ
+   ============================================================ */
+.wm-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, #fff4e6, #ffe9d4);
+  border: 1.5px solid #f0c896;
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.wm-banner-info {
+  background: linear-gradient(135deg, #f0f4ff, #e3ecff);
+  border-color: #b8c8ec;
+}
+.wm-banner-icon {
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.wm-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wm-banner-text b {
+  font-size: 14px;
+  color: var(--text-1);
+  font-weight: 700;
+}
+.wm-banner-text small {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.wm-banner-btn {
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+  box-shadow: 0 3px 10px rgba(196,150,90,0.3);
+}
+
+/* ============================================================
+   ИЗБРАННОЕ — КНОПКА НА РЕЦЕПТЕ
+   ==========================
