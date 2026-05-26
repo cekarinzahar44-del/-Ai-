@@ -101,21 +101,7 @@ const API = {
     });
     if (!res.ok) throw new Error('Ошибка загрузки');
     return res.json();
-  },
-  analyzeFridge: async (file) => {
-    const fd = new FormData();
-    fd.append('photo', file);
-    const res = await fetch('/api/vip/fridge-scan', {
-      method: 'POST',
-      headers: { 'x-telegram-init-data': initData },
-      body: fd
-    });
-    if (!res.ok) throw new Error('Ошибка анализа');
-    return res.json();
-  },
-  rescueCook: (ingredients, prefs) => API.request('/api/vip/rescue-cook', {
-    method: 'POST', body: JSON.stringify({ ingredients, prefs })
-  })
+  }
 };
 
 // ============================================================
@@ -204,31 +190,41 @@ const Voice = {
 };
 
 // ============================================================
-//  ИСТОРИЯ РЕЦЕПТОВ
+//  РЕЦЕПТЫ В БД (история + избранное)
 // ============================================================
 
-const RecipeHistory = {
-  KEY: 'chef_history_v2',
-  load() {
-    try { return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch { return []; }
+// Локальный кэш чтобы не дёргать API при каждом изменении
+const RecipeStore = {
+  // Push больше не нужен — рецепт сохраняется на бэке при генерации
+  cache: { all: null, favorites: null },
+
+  async list(filter = 'all') {
+    const data = await API.request(`/api/recipes/list?filter=${filter}`);
+    this.cache[filter] = data.recipes || [];
+    return this.cache[filter];
   },
-  save(list) {
-    try { localStorage.setItem(this.KEY, JSON.stringify(list.slice(0, 20))); } catch {}
+
+  async get(id) {
+    return API.request(`/api/recipes/${id}`);
   },
-  push(recipe) {
-    if (!recipe?.title) return;
-    const list = this.load();
-    const title = recipe.title.replace(/<[^>]+>/g, '');
-    // Не дублируем одно и то же блюдо подряд
-    if (list[0]?.title === title) return;
-    list.unshift({ title, ts: Date.now(), fullText: recipe.fullText || recipe.steps?.join('\n\n') || '' });
-    this.save(list);
+
+  async toggleFavorite(id) {
+    const data = await API.request(`/api/recipes/${id}/favorite`, { method: 'POST' });
+    return data.isFavorite;
   },
-  clear() {
-    try { localStorage.removeItem(this.KEY); } catch {}
+
+  async rate(id, rating) {
+    return API.request(`/api/recipes/${id}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ rating })
+    });
+  },
+
+  async delete(id) {
+    return API.request(`/api/recipes/${id}`, { method: 'DELETE' });
   }
 };
-window.RecipeHistory = RecipeHistory;
+window.RecipeStore = RecipeStore;
 
 // ============================================================
 //  STEP TIMER
@@ -296,19 +292,33 @@ const RecipeManager = {
   load(recipe) {
     this.current = recipe;
     this.step = 0;
-    RecipeHistory.push(recipe);
     this._updatePlanUI();
+    this._updateFavoriteButton();
     this.render();
+  },
+
+  _updateFavoriteButton() {
+    const btn = $('btn-fav-recipe');
+    if (!btn) return;
+    const icon = btn.querySelector('.fav-icon');
+    const text = btn.querySelector('.fav-text');
+    if (this.current?.isFavorite) {
+      btn.classList.add('active');
+      if (icon) icon.textContent = '❤️';
+      if (text) text.textContent = 'В избранном';
+    } else {
+      btn.classList.remove('active');
+      if (icon) icon.textContent = '🤍';
+      if (text) text.textContent = 'В избранное';
+    }
   },
 
   _updatePlanUI() {
     const plan = window._userPlan || 'FREE';
     const timerWrap = $('step-timer-wrap');
-    const lockShopping = $('lock-shopping');
     const lockShare = $('lock-share');
-    if (timerWrap)    timerWrap.style.display = plan !== 'FREE' ? 'flex' : 'none';
-    if (lockShopping) lockShopping.style.display = plan !== 'FREE' ? 'none' : 'inline';
-    if (lockShare)    lockShare.style.display    = plan === 'VIP' ? 'none' : 'inline';
+    if (timerWrap) timerWrap.style.display = plan !== 'FREE' ? 'flex' : 'none';
+    if (lockShare) lockShare.style.display = plan === 'VIP' ? 'none' : 'inline';
   },
 
   render() {
@@ -342,8 +352,13 @@ const RecipeManager = {
       haptic('light');
     } else {
       hapticNotify('success');
-      toast('🎉 Блюдо готово! Приятного аппетита!', 'success', 4000);
-      showScreen('home');
+      // Если есть id — показываем рейтинг, иначе просто закрываем
+      if (this.current?.id) {
+        showRatingModal();
+      } else {
+        toast('🎉 Блюдо готово! Приятного аппетита!', 'success', 4000);
+        showScreen('home');
+      }
     }
   },
 
@@ -529,6 +544,14 @@ function showScreen(name) {
   // Действия при открытии экранов
   if (name === 'profile') loadProfile();
   if (name === 'weekmenu') {
+    // Баннеры в зависимости от статуса
+    const isVIP = window._userPlan === 'VIP';
+    const freeUsed = !!window._freeWeekmenuUsed;
+    const freeBanner = $('wm-free-banner');
+    const usedBanner = $('wm-used-banner');
+    if (freeBanner) freeBanner.style.display = (!isVIP && !freeUsed) ? 'flex' : 'none';
+    if (usedBanner) usedBanner.style.display = (!isVIP && freeUsed) ? 'flex' : 'none';
+
     const saved = WeekMenuStorage.load();
     if (saved) {
       WeekMenu.load(saved);
@@ -548,6 +571,37 @@ window.showScreen = showScreen;
 
 const ONB_KEY = 'chef_onb_done_v1';
 let _onbCurrent = 0;
+let _onbAllergyChips = new Set();
+
+// Чипы аллергий
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.onb-allergy-chip');
+  if (!chip) return;
+  e.preventDefault();
+  const v = chip.dataset.val;
+  if (_onbAllergyChips.has(v)) {
+    _onbAllergyChips.delete(v);
+    chip.classList.remove('active');
+  } else {
+    _onbAllergyChips.add(v);
+    chip.classList.add('active');
+  }
+  // Обновляем textarea
+  const ta = $('onb-allergies');
+  if (ta) {
+    const manual = ta.value.split(',').map(x => x.trim())
+      .filter(x => x && !['орехи','лактоза','глютен','яйца','морепродукты','мёд'].includes(x.toLowerCase()));
+    ta.value = [...Array.from(_onbAllergyChips), ...manual].filter(Boolean).join(', ');
+  }
+  haptic('light');
+});
+
+window.onbChangePortions = function(delta) {
+  const inp = $('onb-portions');
+  if (!inp) return;
+  inp.value = Math.max(1, Math.min(10, (parseInt(inp.value) || 2) + delta));
+  haptic('light');
+};
 
 window.onbNext = function() {
   const slides = document.querySelectorAll('.onb-slide');
@@ -573,7 +627,7 @@ window.onbNext = function() {
 
   // На последнем слайде меняем текст кнопки
   if (_onbCurrent === slides.length - 1) {
-    nextBtn.textContent = '🚀 Начать готовить!';
+    nextBtn.textContent = '✅ Готово, начать!';
     nextBtn.classList.add('onb-next-final');
     $('onb-skip').style.display = 'none';
   }
@@ -582,22 +636,36 @@ window.onbNext = function() {
 // Свайп по слайдам
 let _onbTouchX = 0;
 document.addEventListener('touchstart', e => {
-  if (!$('screen-onboarding')?.style.display !== 'none') return;
+  if (!document.getElementById('screen-onboarding')?.classList.contains('active-onb')) return;
   _onbTouchX = e.touches[0].clientX;
 }, { passive: true });
 document.addEventListener('touchend', e => {
   if (!document.getElementById('screen-onboarding')?.classList.contains('active-onb')) return;
   const diff = _onbTouchX - e.changedTouches[0].clientX;
-  if (Math.abs(diff) > 50) {
-    if (diff > 0) onbNext();
-  }
+  if (Math.abs(diff) > 50 && diff > 0) onbNext();
 }, { passive: true });
 
-window.finishOnboarding = function() {
+window.finishOnboarding = async function() {
+  // Собираем данные с последнего слайда (если он показан)
+  const allergiesValue = $('onb-allergies')?.value?.trim() || '';
+  const portionsValue = parseInt($('onb-portions')?.value) || 2;
+
   try { localStorage.setItem(ONB_KEY, '1'); } catch {}
+
+  // Сохраняем в БД (не блокируем UI)
+  API.request('/api/user/onboarding', {
+    method: 'POST',
+    body: JSON.stringify({ allergies: allergiesValue, portions: portionsValue })
+  }).then(() => {
+    // Обновляем кэш
+    window._userAllergies = allergiesValue;
+    window._userPortions = portionsValue;
+  }).catch(e => console.warn('Onboarding save failed:', e));
+
   const onbEl = $('screen-onboarding');
   if (onbEl) {
     onbEl.classList.add('onb-fade-out');
+    onbEl.classList.remove('active-onb');
     setTimeout(() => {
       onbEl.style.display = 'none';
       onbEl.classList.remove('onb-fade-out');
@@ -606,11 +674,17 @@ window.finishOnboarding = function() {
   showScreen('home');
   hapticNotify('success');
 
-  // Показываем первый раз приветственный тост
-  setTimeout(() => toast('👨‍🍳 Привет! Назови любое блюдо или выбери из списка', 'success', 4000), 600);
+  // Приветственный тост
+  const msg = allergiesValue
+    ? '👨‍🍳 Запомнил твои предпочтения. Все рецепты будут безопасными!'
+    : '👨‍🍳 Привет! Назови любое блюдо или выбери из списка';
+  setTimeout(() => toast(msg, 'success', 4000), 600);
 };
 
-function shouldShowOnboarding() {
+function shouldShowOnboarding(status) {
+  // Приоритет — флаг с сервера. localStorage — fallback для офлайн
+  if (status?.onboardingDone === true) return false;
+  if (status?.onboardingDone === false) return true;
   try { return !localStorage.getItem(ONB_KEY); } catch { return false; }
 }
 
@@ -622,6 +696,19 @@ async function init() {
   try {
     const status = await API.getStatus();
     window._userPlan = status.planType || status.subscription?.plan_type || 'FREE';
+    window._userAllergies = status.allergies || '';
+    window._userPortions = status.preferredPortions || 2;
+    window._freeWeekmenuUsed = !!status.freeWeekmenuUsed;
+    window._onboardingDone = !!status.onboardingDone;
+    // Режимы и доп. данные
+    window._userMode = status.mode || 'standard';
+    window._userFamilyKids = status.familyKids || '';
+    window._userDisliked = status.disliked || '';
+    window._userFavorites = status.favorites || '';
+    window._userFitnessGoal = status.fitnessGoal || null;
+    window._userDailyCalories = status.dailyCalories || null;
+    window._userReminder = status.dailyReminder !== false;
+
     const badge = $('user-badge');
     const freeCount = $('free-count');
     if (status.subscription) {
@@ -633,11 +720,319 @@ async function init() {
       const left = Math.max(0, (status.freeLimit || 3) - (status.freeUsed || 0));
       if (freeCount) freeCount.textContent = `Бесплатных запросов: ${left}`;
     }
-  } catch {
+
+    // Badge "подарок" для меню на неделю
+    const giftBadge = $('weekmenu-gift-badge');
+    if (giftBadge) {
+      giftBadge.style.display = (!status.subscription && !status.freeWeekmenuUsed) ? 'inline-block' : 'none';
+    }
+
+    // Обновляем тексты пунктов меню в профиле
+    updateModeMenuText();
+    updateReminderMenuText();
+
+    return status;
+  } catch (e) {
     window._userPlan = 'FREE';
     const fc = $('free-count');
     if (fc) fc.textContent = 'Нет соединения';
+    return null;
   }
+}
+
+// ============================================================
+//  РЕДАКТОР АЛЛЕРГИЙ
+// ============================================================
+
+window.showAllergiesEditor = function() {
+  const current = window._userAllergies || '';
+  const existing = $('allergies-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'allergies-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>🛡️ Мои аллергии</h3>
+        <button class="modal-close" onclick="document.getElementById('allergies-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+          Шеф учтёт это в каждом рецепте. Перечисли через запятую — или оставь пустым.
+        </p>
+        <div class="textarea-wrap">
+          <textarea id="allergies-input" rows="3" placeholder="Например: орехи, лактоза, морепродукты">${esc(current)}</textarea>
+        </div>
+        <div class="onb-allergy-chips" id="allergies-chips" style="margin-top:12px;">
+          ${['орехи','лактоза','глютен','яйца','морепродукты','мёд'].map(v => {
+            const labels = {орехи:'🥜 Орехи',лактоза:'🥛 Лактоза',глютен:'🌾 Глютен',яйца:'🥚 Яйца',морепродукты:'🦐 Морепродукты','мёд':'🍯 Мёд'};
+            return `<button type="button" class="onb-allergy-chip" data-val="${v}">${labels[v]}</button>`;
+          }).join('')}
+        </div>
+      </div>
+      <button class="primary-btn full-btn" style="margin-top:16px;" onclick="saveAllergiesFromModal()">💾 Сохранить</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  // Активируем чипы которые уже выбраны
+  const taVals = current.toLowerCase().split(',').map(x => x.trim());
+  modal.querySelectorAll('.onb-allergy-chip').forEach(chip => {
+    if (taVals.includes(chip.dataset.val)) chip.classList.add('active');
+    chip.addEventListener('click', e => {
+      e.preventDefault();
+      chip.classList.toggle('active');
+      // Обновляем textarea на основе активных чипов + ручного ввода
+      const ta = $('allergies-input');
+      const activeChips = Array.from(modal.querySelectorAll('.onb-allergy-chip.active')).map(c => c.dataset.val);
+      const stdSet = new Set(['орехи','лактоза','глютен','яйца','морепродукты','мёд']);
+      const manual = ta.value.split(',').map(x => x.trim()).filter(x => x && !stdSet.has(x.toLowerCase()));
+      ta.value = [...activeChips, ...manual].filter(Boolean).join(', ');
+      haptic('light');
+    });
+  });
+};
+
+window.saveAllergiesFromModal = async function() {
+  const ta = $('allergies-input');
+  const value = ta?.value?.trim() || '';
+  try {
+    await API.request('/api/user/allergies', { method: 'POST', body: JSON.stringify({ allergies: value }) });
+    window._userAllergies = value;
+    document.getElementById('allergies-modal')?.remove();
+    toast(value ? '✅ Аллергии сохранены' : '✅ Список аллергий очищен');
+    hapticNotify('success');
+  } catch (e) {
+    toast('Не удалось сохранить: ' + e.message, 'error');
+  }
+};
+
+// ============================================================
+//  РЕДАКТОР РЕЖИМОВ (Обычный / Семья / Фитнес) — только VIP
+// ============================================================
+
+window.showModeEditor = function() {
+  const isVIP = window._userPlan === 'VIP';
+  if (!isVIP) {
+    toast('🔒 Режимы доступны только для VIP', 'error');
+    setTimeout(() => showScreen('subscription'), 800);
+    return;
+  }
+
+  const currentMode = window._userMode || 'standard';
+  const existing = $('mode-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'mode-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>🎯 Режим работы</h3>
+        <button class="modal-close" onclick="document.getElementById('mode-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+          Шеф адаптирует все рецепты и меню под выбранный режим.
+        </p>
+
+        <div class="mode-list">
+          <button type="button" class="mode-card ${currentMode==='standard'?'active':''}" data-mode="standard">
+            <div class="mode-icon">🍽️</div>
+            <div class="mode-info">
+              <b>Обычный</b>
+              <small>Универсальные рецепты для всех</small>
+            </div>
+          </button>
+          <button type="button" class="mode-card ${currentMode==='family'?'active':''}" data-mode="family">
+            <div class="mode-icon">👨‍👩‍👧</div>
+            <div class="mode-info">
+              <b>Семья с детьми</b>
+              <small>Рецепты которые понравятся и детям, без острого</small>
+            </div>
+          </button>
+          <button type="button" class="mode-card ${currentMode==='fitness'?'active':''}" data-mode="fitness">
+            <div class="mode-icon">💪</div>
+            <div class="mode-info">
+              <b>Фитнес</b>
+              <small>КБЖУ, чистые продукты, спортивное питание</small>
+            </div>
+          </button>
+        </div>
+
+        <!-- Дополнительные поля для семьи -->
+        <div id="mode-family-fields" class="mode-extra" style="display:none;">
+          <div class="form-block">
+            <div class="form-label">Возраст детей</div>
+            <input type="text" id="mode-kids" placeholder="Например: 4 года, 7 лет" class="text-input">
+          </div>
+          <div class="form-block">
+            <div class="form-label">Чего семья не любит</div>
+            <input type="text" id="mode-disliked" placeholder="Например: грибы, рыба, шпинат" class="text-input">
+          </div>
+          <div class="form-block">
+            <div class="form-label">Особенно любят</div>
+            <input type="text" id="mode-favorites" placeholder="Например: курица, макароны, сыр" class="text-input">
+          </div>
+        </div>
+
+        <!-- Дополнительные поля для фитнеса -->
+        <div id="mode-fitness-fields" class="mode-extra" style="display:none;">
+          <div class="form-block">
+            <div class="form-label">Цель</div>
+            <div class="fitness-goals">
+              <button type="button" class="goal-btn" data-goal="gain">📈 Набор массы</button>
+              <button type="button" class="goal-btn" data-goal="cut">📉 Сушка</button>
+              <button type="button" class="goal-btn" data-goal="maintain">⚖️ Поддержание</button>
+            </div>
+          </div>
+          <div class="form-block">
+            <div class="form-label">Дневная норма калорий (опционально)</div>
+            <input type="number" id="mode-calories" placeholder="Например: 2200" min="800" max="5000" class="text-input">
+          </div>
+        </div>
+      </div>
+      <button class="primary-btn full-btn" style="margin-top:14px;" onclick="saveModeFromModal()">💾 Сохранить</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  // Заполняем сохранёнными значениями
+  if ($('mode-kids')) $('mode-kids').value = window._userFamilyKids || '';
+  if ($('mode-disliked')) $('mode-disliked').value = window._userDisliked || '';
+  if ($('mode-favorites')) $('mode-favorites').value = window._userFavorites || '';
+  if ($('mode-calories')) $('mode-calories').value = window._userDailyCalories || '';
+
+  // Активная цель
+  const savedGoal = window._userFitnessGoal;
+  if (savedGoal) modal.querySelector(`.goal-btn[data-goal="${savedGoal}"]`)?.classList.add('active');
+
+  // Переключение режимов
+  const updateExtra = (mode) => {
+    $('mode-family-fields').style.display = mode === 'family' ? 'block' : 'none';
+    $('mode-fitness-fields').style.display = mode === 'fitness' ? 'block' : 'none';
+  };
+  updateExtra(currentMode);
+
+  modal.querySelectorAll('.mode-card').forEach(card => {
+    card.addEventListener('click', () => {
+      modal.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      updateExtra(card.dataset.mode);
+      haptic('light');
+    });
+  });
+
+  modal.querySelectorAll('.goal-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      modal.querySelectorAll('.goal-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      haptic('light');
+    });
+  });
+};
+
+window.saveModeFromModal = async function() {
+  const modal = $('mode-modal');
+  if (!modal) return;
+  const activeMode = modal.querySelector('.mode-card.active')?.dataset.mode || 'standard';
+  const activeGoal = modal.querySelector('.goal-btn.active')?.dataset.goal || null;
+
+  const body = {
+    mode: activeMode,
+    familyKids: $('mode-kids')?.value || '',
+    disliked: $('mode-disliked')?.value || '',
+    favorites: $('mode-favorites')?.value || '',
+    fitnessGoal: activeGoal,
+    dailyCalories: $('mode-calories')?.value || null
+  };
+
+  try {
+    await API.request('/api/user/mode', { method: 'POST', body: JSON.stringify(body) });
+    window._userMode = activeMode;
+    window._userFamilyKids = body.familyKids;
+    window._userDisliked = body.disliked;
+    window._userFavorites = body.favorites;
+    window._userFitnessGoal = activeGoal;
+    window._userDailyCalories = body.dailyCalories;
+    updateModeMenuText();
+    modal.remove();
+    const modeNames = { standard: 'Обычный', family: 'Семья', fitness: 'Фитнес' };
+    toast(`✅ Режим: ${modeNames[activeMode]}`);
+    hapticNotify('success');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+  }
+};
+
+function updateModeMenuText() {
+  const el = $('mode-menu-text');
+  if (!el) return;
+  const mode = window._userMode || 'standard';
+  const modeNames = { standard: 'Обычный', family: 'Семья', fitness: 'Фитнес' };
+  const isVIP = window._userPlan === 'VIP';
+  el.innerHTML = `🎯 Режим: ${modeNames[mode]}${isVIP ? '' : ' <span class="vip-badge">VIP</span>'}`;
+}
+
+// ============================================================
+//  РЕДАКТОР НАПОМИНАНИЙ
+// ============================================================
+
+window.showReminderEditor = function() {
+  const enabled = window._userReminder !== false;
+  const existing = $('reminder-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'reminder-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>🔔 Напоминания</h3>
+        <button class="modal-close" onclick="document.getElementById('reminder-modal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;color:var(--text-2);margin-bottom:18px;line-height:1.5;">
+          Бот пришлёт сообщение в Telegram в <b>17:00</b> с идеей блюда на ужин.
+        </p>
+        <label class="toggle-row">
+          <span class="toggle-label">Ежедневные напоминания</span>
+          <input type="checkbox" id="reminder-toggle" ${enabled ? 'checked' : ''}>
+          <span class="toggle-switch"></span>
+        </label>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:14px;line-height:1.5;">
+          💡 Можно отключить в любой момент. Напоминания помогают не забыть приготовить и не сорваться на доставку.
+        </p>
+      </div>
+      <button class="primary-btn full-btn" style="margin-top:14px;" onclick="saveReminderFromModal()">💾 Сохранить</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+};
+
+window.saveReminderFromModal = async function() {
+  const enabled = $('reminder-toggle')?.checked || false;
+  try {
+    await API.request('/api/user/reminder', { method: 'POST', body: JSON.stringify({ enabled }) });
+    window._userReminder = enabled;
+    updateReminderMenuText();
+    $('reminder-modal')?.remove();
+    toast(enabled ? '🔔 Напоминания включены' : '🔕 Напоминания отключены');
+    hapticNotify('success');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+  }
+};
+
+function updateReminderMenuText() {
+  const el = $('reminder-menu-text');
+  if (!el) return;
+  const enabled = window._userReminder !== false;
+  el.textContent = `🔔 Напоминания: ${enabled ? 'вкл' : 'выкл'}`;
 }
 
 // ============================================================
@@ -799,24 +1194,31 @@ document.addEventListener('click', e => {
 // ============================================================
 
 window.showShoppingList = async function() {
-  const plan = window._userPlan || 'FREE';
-  if (plan === 'FREE') { showScreen('subscription'); return; }
-  if (!RecipeManager.current) return;
+  // Доступно всем — список покупок это базовая фича
+  if (!RecipeManager.current) {
+    toast('Сначала сгенерируй рецепт', 'error');
+    return;
+  }
 
   showScreen('shopping');
   const titleClean = RecipeManager.current.title.replace(/<[^>]+>/g,'');
   $('shopping-recipe-name').textContent = titleClean;
-  $('shopping-loading').style.display = 'flex';
+  $('shopping-loading').style.display = 'block';
   $('shopping-list-wrap').style.display = 'none';
 
-  // Собираем полный текст рецепта из всех шагов
-  const fullText = RecipeManager.current.fullText
-    || RecipeManager.current.steps?.map((s,i) => `Шаг ${i+1}: ${s.replace(/<[^>]+>/g,'')}`).join('\n\n')
-    || '';
+  // Собираем чистый текст рецепта без HTML
+  const rawFull = RecipeManager.current.fullText || '';
+  const rawSteps = RecipeManager.current.steps
+    ? RecipeManager.current.steps.map((s, i) => `Шаг ${i+1}: ${s}`).join('\n\n')
+    : '';
+  const fullText = (rawFull || rawSteps)
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .trim();
 
-  if (!fullText.trim()) {
+  if (!fullText || fullText.length < 20) {
     $('shopping-loading').style.display = 'none';
-    $('shopping-list-wrap').innerHTML = '<p style="color:var(--text-muted);padding:20px;text-align:center">Нет данных рецепта</p>';
+    $('shopping-list-wrap').innerHTML = '<p style="color:var(--text-muted);padding:20px;text-align:center">Нет текста рецепта для анализа</p>';
     $('shopping-list-wrap').style.display = 'block';
     return;
   }
@@ -830,7 +1232,7 @@ window.showShoppingList = async function() {
     wrap.innerHTML = '';
 
     if (!items.length) {
-      wrap.innerHTML = '<p style="color:var(--text-muted);padding:16px 0;text-align:center">Не удалось извлечь ингредиенты.<br>Попробуй ещё раз.</p>';
+      wrap.innerHTML = '<p style="color:var(--text-muted);padding:16px 0;text-align:center">Не удалось извлечь ингредиенты.<br><small>Попробуй позже</small></p>';
     } else {
       items.forEach((item, idx) => {
         const el = document.createElement('div');
@@ -840,8 +1242,8 @@ window.showShoppingList = async function() {
             <input type="checkbox" id="ci-${idx}" onchange="this.closest('.check-item').classList.toggle('done', this.checked)">
             <span class="checkmark"></span>
           </label>
-          <span class="check-name">${item.name}</span>
-          <span class="check-amt">${item.amount || ''}</span>`;
+          <span class="check-name">${esc(item.name || '')}</span>
+          <span class="check-amt">${esc(item.amount || '')}</span>`;
         wrap.appendChild(el);
       });
     }
@@ -850,8 +1252,9 @@ window.showShoppingList = async function() {
     $('shopping-list-wrap').style.display = 'block';
     hapticNotify('success');
   } catch(e) {
+    console.error('[Shopping]', e);
     $('shopping-loading').style.display = 'none';
-    $('shopping-list-wrap').innerHTML = `<p style="color:var(--text-muted);padding:20px;text-align:center">Ошибка: ${e.message}</p>`;
+    $('shopping-list-wrap').innerHTML = `<p style="color:var(--text-muted);padding:20px;text-align:center">Ошибка: ${esc(e.message)}</p>`;
     $('shopping-list-wrap').style.display = 'block';
     toast('Ошибка загрузки списка', 'error');
   }
@@ -958,45 +1361,139 @@ window.shareRecipe = async function() {
 };
 
 // ============================================================
-//  ИСТОРИЯ РЕЦЕПТОВ
+//  РЕЦЕПТЫ — СПИСОК, ИЗБРАННОЕ, РЕЙТИНГ
 // ============================================================
 
-window.loadHistory = function() {
-  const list = RecipeHistory.load();
+window.showRecipesList = async function(filter) {
+  filter = filter || 'all';
+  showScreen('history');
+
+  // Заголовок и таб
+  const titleEl = document.querySelector('#screen-history .screen-title');
+  if (titleEl) titleEl.textContent = filter === 'favorites' ? 'Избранное' : 'История рецептов';
+
   const wrap = $('history-list');
   const empty = $('history-empty');
   if (!wrap) return;
-  wrap.innerHTML = '';
 
-  if (!list.length) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
+  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px;">Загружаю...</div>';
   if (empty) empty.style.display = 'none';
 
-  list.forEach(item => {
-    const el = document.createElement('div');
-    el.className = 'hist-item';
-    el.innerHTML = `
-      <div class="hist-left">
-        <div class="hist-title">${item.title}</div>
-        <div class="hist-date">${formatDate(item.ts)}</div>
-      </div>
-      <button class="hist-btn">Открыть</button>`;
-    el.querySelector('button').onclick = () => {
-      const steps = item.fullText.split(/\n\s*\n/).filter(s => s.trim().length > 10);
-      RecipeManager.load({ title: item.title, steps, total: steps.length, fullText: item.fullText });
-      showScreen('recipe');
-    };
-    wrap.appendChild(el);
-  });
+  try {
+    const list = await RecipeStore.list(filter);
+    wrap.innerHTML = '';
+
+    if (!list.length) {
+      const msg = filter === 'favorites'
+        ? 'Пока нет избранных рецептов.<br><small>Нажми ❤️ на рецепте чтобы сохранить</small>'
+        : 'Пока нет рецептов.<br><small>Создай свой первый!</small>';
+      wrap.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:14px;">${msg}</div>`;
+      return;
+    }
+
+    list.forEach(item => {
+      const date = new Date(item.created_at).toLocaleDateString('ru-RU', { day:'2-digit', month:'short' });
+      const stars = item.rating ? '★'.repeat(item.rating) : '';
+      const el = document.createElement('div');
+      el.className = 'hist-item';
+      el.innerHTML = `
+        <div class="hist-left">
+          <div class="hist-title">${esc(item.title)}</div>
+          <div class="hist-date">${date}${stars ? ` · <span class="hist-stars">${stars}</span>` : ''}${item.is_favorite ? ' · ❤️' : ''}</div>
+        </div>
+        <button class="hist-btn">Открыть</button>`;
+      el.querySelector('button').onclick = async () => {
+        try {
+          const recipe = await RecipeStore.get(item.id);
+          RecipeManager.load(recipe);
+          showScreen('recipe');
+        } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+      };
+      wrap.appendChild(el);
+    });
+  } catch (e) {
+    wrap.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-muted);">Не удалось загрузить: ${esc(e.message)}</div>`;
+  }
 };
 
-window.clearHistory = function() {
-  if (!confirm('Очистить всю историю рецептов?')) return;
-  RecipeHistory.clear();
-  loadHistory();
-  toast('История очищена');
+// Старая совместимость
+window.loadHistory = () => window.showRecipesList('all');
+window.clearHistory = () => toast('История синхронизируется с сервером');
+
+// Избранное на экране рецепта
+window.toggleFavorite = async function() {
+  if (!RecipeManager.current?.id) {
+    toast('Этот рецепт не сохранён', 'error');
+    return;
+  }
+  const btn = $('btn-fav-recipe');
+  btn.disabled = true;
+  try {
+    const isFav = await RecipeStore.toggleFavorite(RecipeManager.current.id);
+    RecipeManager.current.isFavorite = isFav;
+    RecipeManager._updateFavoriteButton();
+    toast(isFav ? '❤️ Добавлено в избранное' : 'Убрано из избранного');
+    haptic(isFav ? 'medium' : 'light');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// Модалка рейтинга — показывается при нажатии "Готово!"
+function showRatingModal() {
+  if (!RecipeManager.current?.id) return;
+  const existing = $('rating-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'rating-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box rating-box">
+      <div style="text-align:center;padding:8px 0;">
+        <div style="font-size:48px;line-height:1;margin-bottom:10px;">🎉</div>
+        <h3 style="margin:0 0 6px;font-size:20px;">Блюдо готово!</h3>
+        <p style="margin:0 0 18px;color:var(--text-muted);font-size:14px;">Как тебе рецепт?</p>
+        <div class="rating-stars">
+          ${[1,2,3,4,5].map(n => `<button class="rating-star" data-val="${n}">★</button>`).join('')}
+        </div>
+        <button class="ghost-btn full-btn" style="margin-top:18px;" onclick="closeRatingModal()">Пропустить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  modal.querySelectorAll('.rating-star').forEach(btn => {
+    btn.addEventListener('mouseover', () => {
+      const v = parseInt(btn.dataset.val);
+      modal.querySelectorAll('.rating-star').forEach((s, i) => {
+        s.classList.toggle('hovered', i < v);
+      });
+    });
+    btn.addEventListener('click', async () => {
+      const rating = parseInt(btn.dataset.val);
+      modal.querySelectorAll('.rating-star').forEach((s, i) => {
+        s.classList.toggle('selected', i < rating);
+      });
+      try {
+        await RecipeStore.rate(RecipeManager.current.id, rating);
+        RecipeManager.current.rating = rating;
+        hapticNotify('success');
+        setTimeout(() => {
+          closeRatingModal();
+          toast(rating >= 4 ? '⭐ Отлично! Рейтинг сохранён' : 'Спасибо за оценку!');
+          showScreen('home');
+        }, 600);
+      } catch (e) {
+        toast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
+}
+
+window.closeRatingModal = function() {
+  document.getElementById('rating-modal')?.remove();
 };
 
 // ============================================================
@@ -1055,93 +1552,6 @@ async function loadProfile() {
     console.error('Profile error:', e);
   }
 }
-
-// ============================================================
-//  ФОТО ХОЛОДИЛЬНИКА
-// ============================================================
-
-window.previewFridgePhoto = function(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    $('fridge-preview').src = e.target.result;
-    $('fridge-preview-wrap').style.display = 'block';
-    $('fridge-upload-ph').style.display = 'none';
-    $('btn-analyze-fridge').disabled = false;
-  };
-  reader.readAsDataURL(file);
-};
-
-window.analyzeFridge = async function() {
-  const plan = window._userPlan || 'FREE';
-  if (plan !== 'VIP') { showScreen('subscription'); return; }
-  const file = $('fridge-photo').files[0];
-  if (!file) return;
-  const btn = $('btn-analyze-fridge');
-  btn.disabled = true;
-  btn.textContent = '🔍 Анализирую...';
-  try {
-    const data = await API.analyzeFridge(file);
-    $('fridge-text').innerHTML = (data.suggestion || 'Не удалось определить').replace(/\n/g, '<br>');
-    $('fridge-result').style.display = 'block';
-    window._fridgeSuggestion = data.dish;
-    hapticNotify('success');
-  } catch (e) {
-    toast('Ошибка анализа: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🔍 Что приготовить?';
-  }
-};
-
-window.cookFromFridgeSuggestion = function() {
-  if (window._fridgeSuggestion) {
-    $('dish-input').value = window._fridgeSuggestion;
-    showScreen('details');
-  }
-};
-
-// ============================================================
-//  ЧТО ЕСТЬ В ДОМЕ
-// ============================================================
-
-let _fridgeTextPrefs = [];
-document.querySelectorAll('#fridge-prefs .pref')?.forEach(p => {
-  p.addEventListener('click', () => {
-    p.classList.toggle('active');
-    const v = p.dataset.pref;
-    _fridgeTextPrefs = p.classList.contains('active')
-      ? [..._fridgeTextPrefs, v]
-      : _fridgeTextPrefs.filter(x => x !== v);
-  });
-});
-
-window.rescueCook = async function() {
-  const plan = window._userPlan || 'FREE';
-  if (plan !== 'VIP') { showScreen('subscription'); return; }
-  const ingredients = $('fridge-ingredients').value.trim();
-  if (!ingredients) { toast('Введи что есть в холодильнике', 'error'); return; }
-  const btn = $('btn-rescue-cook');
-  btn.disabled = true;
-  btn.textContent = '⏳ Придумываю...';
-  try {
-    const data = await API.rescueCook(ingredients, _fridgeTextPrefs.join(', '));
-    $('fridge-text-content').innerHTML = (data.suggestion || 'Попробуй снова').replace(/\n/g, '<br>');
-    $('fridge-text-result').style.display = 'block';
-    window._rescueDish = data.dish;
-    hapticNotify('success');
-  } catch (e) {
-    toast('Ошибка: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🍳 Спаси ужин!';
-  }
-};
-
-window.cookFridgeText = function() {
-  if (window._rescueDish) { $('dish-input').value = window._rescueDish; showScreen('details'); }
-};
 
 // ============================================================
 //  ДИЕТОЛОГ
@@ -1422,7 +1832,7 @@ window.gatedAction = function(screen, required) {
 // ============================================================
 
 window.addEventListener('load', async () => {
-  await init();
+  const status = await init();
   const loader = $('loader');
   if (loader) {
     loader.style.transition = 'opacity 0.4s';
@@ -1430,8 +1840,8 @@ window.addEventListener('load', async () => {
     setTimeout(() => loader.style.display = 'none', 400);
   }
 
-  // Новым пользователям показываем онбординг
-  if (shouldShowOnboarding()) {
+  // Новым пользователям — онбординг (флаг с сервера приоритетнее localStorage)
+  if (shouldShowOnboarding(status)) {
     const onbEl = $('screen-onboarding');
     if (onbEl) {
       onbEl.style.display = 'flex';
