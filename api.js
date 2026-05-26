@@ -45,7 +45,76 @@ const adminAuth = (req, res, next) => {
   next();
 };
 // ===== HELPERS =====
-// ===== ЕДИНЫЙ ЗАЩИТНЫЙ БЛОК — вставляется в каждый system-промпт =====
+
+// Получить полный профиль пользователя с режимом и предпочтениями
+async function getUserPrefs(tgId) {
+  try {
+    const { rows: [user] } = await global.pool.query(
+      `SELECT allergies, preferred_portions, mode, family_kids, disliked_products,
+              favorite_products, fitness_goal, daily_calories
+       FROM users WHERE tg_id=$1`,
+      [tgId]
+    );
+    return {
+      allergies: (user?.allergies || '').trim(),
+      portions: user?.preferred_portions || 2,
+      mode: user?.mode || 'standard',
+      familyKids: (user?.family_kids || '').trim(),
+      disliked: (user?.disliked_products || '').trim(),
+      favorites: (user?.favorite_products || '').trim(),
+      fitnessGoal: user?.fitness_goal || null,
+      dailyCalories: user?.daily_calories || null
+    };
+  } catch {
+    return { allergies: '', portions: 2, mode: 'standard', familyKids: '', disliked: '', favorites: '', fitnessGoal: null, dailyCalories: null };
+  }
+}
+
+// Блок аллергий для промпта
+function allergyBlock(allergies) {
+  if (!allergies) return '';
+  return `\n\n🚫 КРИТИЧНО — АЛЛЕРГИИ ПОЛЬЗОВАТЕЛЯ: ${allergies}.
+ЗАПРЕЩЕНО использовать эти продукты в рецепте, даже в малых количествах. Если базовый рецепт обычно содержит эти ингредиенты — замени их безопасными аналогами или выбери другое блюдо.\n`;
+}
+
+// Блок режима — семья или фитнес
+function modeBlock(prefs) {
+  if (prefs.mode === 'family') {
+    const kidsPart = prefs.familyKids ? `Дети: ${prefs.familyKids}. ` : '';
+    const dislikedPart = prefs.disliked ? `Семья не любит: ${prefs.disliked}. ` : '';
+    const favPart = prefs.favorites ? `Особенно любят: ${prefs.favorites}. ` : '';
+    return `\n\n👨‍👩‍👧 РЕЖИМ "СЕМЬЯ С ДЕТЬМИ":
+${kidsPart}${dislikedPart}${favPart}
+Адаптируй рецепт для семейной готовки:
+— Блюдо должно нравиться и взрослым, и детям
+— Никаких острых специй и сильного алкоголя
+— Если есть продукты которые не любят — НЕ используй их
+— Если есть любимые — постарайся включить
+— Подача в детском варианте: красиво, разнообразно по цветам, можно с забавной формой
+— Время приготовления оптимально до 30 минут (родители заняты)\n`;
+  }
+  if (prefs.mode === 'fitness') {
+    const goalNames = {
+      gain: 'НАБОР МАССЫ (профицит калорий, много белка)',
+      cut: 'СУШКА/ПОХУДЕНИЕ (дефицит калорий, мало углеводов вечером)',
+      maintain: 'ПОДДЕРЖАНИЕ ФОРМЫ (сбалансированное питание)'
+    };
+    const goal = prefs.fitnessGoal ? goalNames[prefs.fitnessGoal] || prefs.fitnessGoal : 'СБАЛАНСИРОВАННОЕ ПИТАНИЕ';
+    const cal = prefs.dailyCalories ? `Дневная норма: ${prefs.dailyCalories} ккал. ` : '';
+    return `\n\n💪 РЕЖИМ "ФИТНЕС":
+Цель: ${goal}. ${cal}
+Адаптируй рецепт под спортивное питание:
+— Указывай ОБЯЗАТЕЛЬНО точные КБЖУ на порцию
+— Используй "чистые" продукты: куриная грудка, индейка, рыба, творог, яйца, овощи, гречка, бурый рис, киноа
+— Минимум жареного — лучше варёное, на пару, запечённое
+— Полезные жиры: оливковое масло, авокадо, орехи (если нет аллергии)
+— Указывай белки/жиры/углеводы в граммах
+— Подача: красивая, фитнес-эстетика (источник вдохновения — Instagram-блогеры)\n`;
+  }
+  return '';
+}
+
+// ===== ЕДИНЫЙ ЗАЩИТНЫЙ БЛОК =====
 const FOOD_ONLY_GUARD = `
 КРИТИЧЕСКОЕ ПРАВИЛО: Ты работаешь ИСКЛЮЧИТЕЛЬНО в сфере еды, кулинарии и напитков. 
 Если пользователь спрашивает о чём-либо не связанном с едой, рецептами, кулинарными техниками, продуктами питания или напитками — вежливо откажи и верни разговор к теме еды.
@@ -67,12 +136,16 @@ function detectRequestType(text) {
   return 'dish';
 }
 
-function buildPrompt(requestType, ingredients, details, planType) {
+function buildPrompt(requestType, ingredients, details, planType, prefs = {}) {
   const isVIP = planType === 'VIP';
   const isPRO = planType === 'PRO' || isVIP;
+  const allergies = prefs.allergies || '';
+
+  // Режимы доступны только VIP
+  const modeText = isVIP ? modeBlock(prefs) : '';
 
   const system = `Ты опытный домашний шеф-повар с профессиональным образованием. Твоя единственная задача — давать подробные, понятные рецепты которые реально работают на домашней кухне.
-${FOOD_ONLY_GUARD}
+${FOOD_ONLY_GUARD}${allergyBlock(allergies)}${modeText}
 ФОРМАТ РЕЦЕПТА (строго соблюдай):
 
 🍽 [Название блюда] — [одна строка с аппетитным описанием]
@@ -145,16 +218,65 @@ function cleanHtml(text) {
 router.get('/recipe/status', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
+
+    // Создаём пользователя если первый раз
+    await global.pool.query(
+      `INSERT INTO users (tg_id, username, first_name, free_recipes_used)
+       VALUES ($1,$2,$3,0) ON CONFLICT (tg_id) DO NOTHING`,
+      [tgId, req.telegramUser.username, req.telegramUser.first_name]
+    );
+
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
-    );    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
+    );
+    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
     res.json({
       subscription: sub || null,
       freeUsed: user?.free_recipes_used || 0,
       freeLimit: FREE_LIMIT,
+      onboardingDone: !!user?.onboarding_done,
+      allergies: user?.allergies || '',
+      preferredPortions: user?.preferred_portions || 2,
+      freeWeekmenuUsed: !!user?.free_weekmenu_used,
+      mode: user?.mode || 'standard',
+      familyKids: user?.family_kids || '',
+      disliked: user?.disliked_products || '',
+      favorites: user?.favorite_products || '',
+      fitnessGoal: user?.fitness_goal || null,
+      dailyCalories: user?.daily_calories || null,
+      dailyReminder: user?.daily_reminder !== false,
       prices: { PRO: PRO_PRICE, VIP: VIP_PRICE }
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== СОХРАНИТЬ АЛЛЕРГИИ И ЗАВЕРШИТЬ ОНБОРДИНГ =====
+router.post('/user/onboarding', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const { allergies = '', portions = 2 } = req.body;
+    const cleanAllergies = String(allergies).slice(0, 500).trim();
+    const cleanPortions = Math.max(1, Math.min(10, parseInt(portions) || 2));
+    await global.pool.query(
+      `UPDATE users SET allergies=$1, preferred_portions=$2, onboarding_done=TRUE WHERE tg_id=$3`,
+      [cleanAllergies, cleanPortions, tgId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== ОБНОВИТЬ ТОЛЬКО АЛЛЕРГИИ =====
+router.post('/user/allergies', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const allergies = String(req.body.allergies || '').slice(0, 500).trim();
+    await global.pool.query(`UPDATE users SET allergies=$1 WHERE tg_id=$2`, [allergies, tgId]);
+    res.json({ ok: true, allergies });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -165,16 +287,19 @@ router.post('/recipe/generate', async (req, res) => {
     const tgId = req.telegramUser.id;
     const { ingredients, details } = req.body;
     if (!ingredients) return res.status(400).json({ error: 'No ingredients' });
+
     await global.pool.query(
       `INSERT INTO users (tg_id, username, first_name, free_recipes_used)
        VALUES ($1,$2,$3,0) ON CONFLICT (tg_id) DO NOTHING`,
       [tgId, req.telegramUser.username, req.telegramUser.first_name]
     );
+
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
     );
     const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
+
     if (!sub && user.free_recipes_used >= FREE_LIMIT) {
       return res.status(403).json({
         error: 'limit_reached',
@@ -182,25 +307,198 @@ router.post('/recipe/generate', async (req, res) => {
         prices: { PRO: PRO_PRICE, VIP: VIP_PRICE }
       });
     }
+
     const planType = sub?.plan_type || 'FREE';
+    const userPrefs = await getUserPrefs(tgId);
     const requestType = detectRequestType(ingredients);
-    const prompt = buildPrompt(requestType, ingredients, details, planType);
+    const prompt = buildPrompt(requestType, ingredients, details, planType, userPrefs);
+
     let recipe = await callGigaChat(prompt.system, prompt.user);
     recipe = cleanHtml(recipe);
     const steps = parseSteps(recipe);
+
     if (!sub) {
+      // Атомарный инкремент — защита от двойного списания при параллельных запросах
       await global.pool.query(
         `UPDATE users SET free_recipes_used = free_recipes_used + 1 WHERE tg_id=$1`,
         [tgId]
       );
     }
+
+    // Обновляем last_recipe_at — для активного бота
+    await global.pool.query(`UPDATE users SET last_recipe_at=NOW() WHERE tg_id=$1`, [tgId]).catch(() => {});
+
+    // Чистый title без HTML
+    const titleMatch = recipe.match(/🍽\s*([^\n<]+)/);
+    const cleanTitle = titleMatch
+      ? titleMatch[1].replace(/<\/?b>/g,'').trim()
+      : 'Твой рецепт';
+    const title = `🍽 ${cleanTitle}`;
+
+    // Сохраняем рецепт в БД (всем тарифам)
+    let recipeId = null;
+    try {
+      const { rows: [saved] } = await global.pool.query(
+        `INSERT INTO recipes (user_id, title, full_text, tags) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [tgId, cleanTitle, recipe, userPrefs.mode || 'standard']
+      );
+      recipeId = saved.id;
+    } catch (e) { console.warn('Save recipe failed:', e.message); }
+
     res.json({
-      title: (recipe.match(/🍽 [^\n]+/) || ['Твой рецепт'])[0],
+      id: recipeId,
+      title,
       fullText: recipe,
-      steps,      total: steps.length
+      steps,
+      total: steps.length
     });
   } catch (e) {
     console.error('Recipe error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== СПИСОК ИСТОРИИ И ИЗБРАННОГО =====
+router.get('/recipes/list', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const filter = req.query.filter || 'all'; // all | favorites
+    let where = 'user_id=$1';
+    if (filter === 'favorites') where += ' AND is_favorite=TRUE';
+
+    const { rows } = await global.pool.query(
+      `SELECT id, title, is_favorite, rating, cooked_count, created_at
+       FROM recipes WHERE ${where}
+       ORDER BY created_at DESC LIMIT 50`,
+      [tgId]
+    );
+    res.json({ recipes: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== ПОЛУЧИТЬ ОДИН РЕЦЕПТ =====
+router.get('/recipes/:id', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ error: 'bad id' });
+    const { rows: [r] } = await global.pool.query(
+      `SELECT * FROM recipes WHERE id=$1 AND user_id=$2`,
+      [id, tgId]
+    );
+    if (!r) return res.status(404).json({ error: 'not found' });
+
+    const steps = parseSteps(r.full_text);
+    res.json({
+      id: r.id,
+      title: `🍽 ${r.title}`,
+      fullText: r.full_text,
+      steps,
+      total: steps.length,
+      isFavorite: r.is_favorite,
+      rating: r.rating,
+      cookedCount: r.cooked_count
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== ИЗБРАННОЕ — добавить/убрать =====
+router.post('/recipes/:id/favorite', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ error: 'bad id' });
+
+    const { rows: [updated] } = await global.pool.query(
+      `UPDATE recipes SET is_favorite = NOT is_favorite
+       WHERE id=$1 AND user_id=$2
+       RETURNING is_favorite`,
+      [id, tgId]
+    );
+    if (!updated) return res.status(404).json({ error: 'not found' });
+    res.json({ isFavorite: updated.is_favorite });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== РЕЙТИНГ РЕЦЕПТА =====
+router.post('/recipes/:id/rate', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const id = parseInt(req.params.id);
+    const rating = parseInt(req.body.rating);
+    if (!id || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'bad input' });
+
+    await global.pool.query(
+      `UPDATE recipes SET rating=$1, cooked_count=cooked_count+1 WHERE id=$2 AND user_id=$3`,
+      [rating, id, tgId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== УДАЛИТЬ РЕЦЕПТ =====
+router.delete('/recipes/:id', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ error: 'bad id' });
+    await global.pool.query(`DELETE FROM recipes WHERE id=$1 AND user_id=$2`, [id, tgId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== РЕЖИМЫ И НАСТРОЙКИ ПРОФИЛЯ =====
+router.post('/user/mode', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const { mode, familyKids, disliked, favorites, fitnessGoal, dailyCalories } = req.body;
+
+    // Проверка VIP — режимы только для VIP
+    const { rows: [sub] } = await global.pool.query(
+      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
+      [tgId]
+    );
+    if (sub?.plan_type !== 'VIP' && mode !== 'standard') {
+      return res.status(403).json({ error: 'Режимы доступны только для VIP' });
+    }
+
+    const allowed = ['standard', 'family', 'fitness'];
+    const safeMode = allowed.includes(mode) ? mode : 'standard';
+    const safeKids = String(familyKids || '').slice(0, 300);
+    const safeDisliked = String(disliked || '').slice(0, 300);
+    const safeFavorites = String(favorites || '').slice(0, 300);
+    const safeGoal = ['gain','cut','maintain'].includes(fitnessGoal) ? fitnessGoal : null;
+    const safeCal = dailyCalories ? Math.max(800, Math.min(5000, parseInt(dailyCalories) || 2000)) : null;
+
+    await global.pool.query(
+      `UPDATE users SET mode=$1, family_kids=$2, disliked_products=$3, favorite_products=$4,
+       fitness_goal=$5, daily_calories=$6 WHERE tg_id=$7`,
+      [safeMode, safeKids, safeDisliked, safeFavorites, safeGoal, safeCal, tgId]
+    );
+    res.json({ ok: true, mode: safeMode });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== ВКЛ/ВЫКЛ НАПОМИНАНИЯ =====
+router.post('/user/reminder', async (req, res) => {
+  try {
+    const tgId = req.telegramUser.id;
+    const enabled = !!req.body.enabled;
+    await global.pool.query(`UPDATE users SET daily_reminder=$1 WHERE tg_id=$2`, [enabled, tgId]);
+    res.json({ ok: true, enabled });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -318,18 +616,33 @@ router.get('/user/fullprofile', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-// ===== VIP: WEEK MENU — генерация по одному дню =====
+// ===== WEEK MENU — VIP или первое бесплатное =====
 router.post('/vip/weekmenu', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
-    const { prefs, level = 'base', portions = 2 } = req.body;
+    const { prefs, level = 'base', portions: reqPortions } = req.body;
+
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
     );
-    if (!sub || sub.plan_type !== 'VIP') {
-      return res.status(403).json({ error: 'Только для VIP' });
+    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
+
+    const isVIP = sub?.plan_type === 'VIP';
+    const isFreeBonus = !isVIP && !user?.free_weekmenu_used; // первое меню бесплатно
+
+    if (!isVIP && !isFreeBonus) {
+      return res.status(403).json({
+        error: 'Только для VIP',
+        message: 'Ты уже использовал бесплатное меню. Оформи VIP подписку для регулярного использования.'
+      });
     }
+
+    const userPrefs = await getUserPrefs(tgId);
+    const allergies = userPrefs.allergies;
+    const portions = reqPortions || userPrefs.portions || 2;
+    // Режимы доступны только VIP
+    const modeText = isVIP ? modeBlock(userPrefs) : '';
 
     const levelInstructions = {
       base: `УРОВЕНЬ: БАЗОВОЕ. Используй только простые доступные продукты: яйца, картофель, макароны, гречка, рис, овсянка, курица, фарш, морковь, лук, капуста, помидоры, огурцы, молоко, кефир, сметана, сыр, хлеб. ЗАПРЕЩЕНО: авокадо, лосось, сёмга, киноа, моцарелла, страчателла, руккола, трюфель, пармезан, спаржа.`,
@@ -343,7 +656,7 @@ router.post('/vip/weekmenu', async (req, res) => {
     ];
 
     const systemPrompt = `Ты профессиональный шеф-повар. Составь ОДИН день меню питания для ${portions} человек.
-${FOOD_ONLY_GUARD}
+${FOOD_ONLY_GUARD}${allergyBlock(allergies)}${modeText}
 ${levelInstructions[level] || levelInstructions.base}
 
 ТОЧНЫЙ ФОРМАТ — соблюдай строго:
@@ -416,145 +729,108 @@ ${levelInstructions[level] || levelInstructions.base}
     }
 
     const menu = dayResults.join('\n\n\n');
-    res.json({ menu });
+
+    // Если это было бесплатное первое меню — отмечаем что использовано
+    if (isFreeBonus) {
+      await global.pool.query(
+        `UPDATE users SET free_weekmenu_used=TRUE WHERE tg_id=$1`,
+        [tgId]
+      );
+    }
+
+    res.json({ menu, isFreeBonus });
 
   } catch (e) {
     console.error('Week menu error:', e);
     res.status(500).json({ error: e.message });
   }
 });
-// ===== VIP: ФОТО ХОЛОДИЛЬНИКА =====
-router.post('/vip/fridge-scan', async (req, res) => {
-  try {
-    const tgId = req.telegramUser.id;
-    const { rows: [sub] } = await global.pool.query(
-      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
-      [tgId]
-    );
-    if (!sub || sub.plan_type !== 'VIP') {
-      return res.status(403).json({ error: 'Только для VIP' });
-    }
-    const system = `Ты опытный шеф-повар который умеет придумывать блюда из любых продуктов.
-${FOOD_ONLY_GUARD}
-Пользователь прислал фото своего холодильника. Твоя задача:
-1. Определи все видимые продукты
-2. Предложи 1 конкретное блюдо которое можно приготовить прямо сейчас
-3. Дай короткое описание почему именно это блюдо
-
-ФОРМАТ ОТВЕТА:
-🔍 Вижу в холодильнике: [перечисли продукты через запятую]
-
-🍽 Предлагаю приготовить: [НАЗВАНИЕ БЛЮДА]
-📝 [2-3 предложения почему это блюдо — вкусно, быстро, из этих продуктов]
-⏱ Время: [X минут]
-
-Ответ должен быть коротким и мотивирующим. Не используй HTML и markdown.`;
-    const suggestion = await callGigaChat(system, 'Определи продукты на фото и предложи блюдо');
-    const dishMatch = suggestion.match(/предлагаю приготовить[:\s]+([^\n]+)/i);
-    res.json({ suggestion, dish: dishMatch ? dishMatch[1].trim() : '' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ===== VIP: ЧТО ЕСТЬ В ДОМЕ (текстом) =====
-router.post('/vip/rescue-cook', async (req, res) => {
-  try {
-    const tgId = req.telegramUser.id;
-    const { ingredients, prefs } = req.body;
-    const { rows: [sub] } = await global.pool.query(
-      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
-      [tgId]
-    );
-    if (!sub || sub.plan_type !== 'VIP') {
-      return res.status(403).json({ error: 'Только для VIP' });
-    }
-    const system = `Ты изобретательный шеф-повар который умеет готовить вкусную еду из минимального набора продуктов. Специализируешься на "спасении ужина" когда холодильник почти пустой.
-${FOOD_ONLY_GUARD}
-Пользователь перечислит что у него есть дома. Твоя задача — предложить самое вкусное и реалистичное блюдо из этих продуктов.
-
-ФОРМАТ ОТВЕТА:
-✨ Из этого можно приготовить: [НАЗВАНИЕ БЛЮДА]
-
-📝 [2-3 предложения: почему это хорошая идея, что получится]
-⏱ Время: [X минут] | 👥 Порций: [N]
-
-🥣 Понадобится:
-— [из предложенных продуктов] — [количество]
-— [базовые специи/масло если нужны]
-
-👨‍🍳 Быстрый рецепт:
-1. [шаг]
-2. [шаг]
-3. [шаг]
-
-💡 [совет как улучшить блюдо или чем дополнить]
-
-Не используй HTML и markdown. Будь конкретным и вдохновляющим.`;
-    const userMsg = `Продукты которые есть дома: ${ingredients}${prefs ? `\nОграничения: ${prefs}` : ''}`;
-    const suggestion = await callGigaChat(system, userMsg);
-    const dishMatch = suggestion.match(/можно приготовить[:\s]+([^\n]+)/i);
-    res.json({ suggestion, dish: dishMatch ? dishMatch[1].trim() : '' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ===== PRO: СПИСОК ПОКУПОК =====
+// ===== СПИСОК ПОКУПОК (доступен всем пользователям бесплатно) =====
 router.post('/recipe/shopping-list', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
-    const { recipe } = req.body;
-    const { rows: [sub] } = await global.pool.query(
-      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
-      [tgId]
-    );
-    if (!sub) return res.status(403).json({ error: 'Только для PRO и VIP' });
+    const recipe = String(req.body.recipe || '').trim();
 
-    const system = `Ты помощник по кулинарным покупкам. Из текста рецепта извлеки ВСЕ ингредиенты.
-Верни ТОЛЬКО валидный JSON — никакого текста до или после, никаких markdown блоков.
-Формат строго такой:
-{"items":[{"name":"куриное филе","amount":"400г"},{"name":"чеснок","amount":"3 зубчика"}]}
+    if (recipe.length < 20) {
+      return res.status(400).json({ error: 'Текст рецепта слишком короткий' });
+    }
+
+    // Чистим от HTML и эмодзи-разделителей перед отправкой в AI
+    const cleanRecipe = recipe
+      .replace(/<\/?[a-z][^>]*>/gi, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/[═─]{3,}/g, '')
+      .slice(0, 4000);
+
+    const system = `Ты помощник шеф-повара по составлению списка покупок. 
+Из текста рецепта извлеки список продуктов которые нужно купить.
+
+ВАЖНО: Верни ТОЛЬКО валидный JSON объект без какого-либо другого текста. Никаких пояснений, markdown, заголовков.
+
+Формат ответа СТРОГО такой:
+{"items":[{"name":"спагетти","amount":"200г"},{"name":"яйца","amount":"3 шт"},{"name":"бекон","amount":"150г"}]}
 
 Правила:
-- name: только название продукта, строчными буквами
-- amount: точное количество с единицей
-- Не дублируй одинаковые продукты — суммируй
-- НЕ включай: воду, соль, чёрный перец, растительное масло (есть у всех)
-- Отвечай ТОЛЬКО JSON, без какого-либо другого текста`;
+- name: только название продукта строчными буквами на русском (без эпитетов вроде "свежий", "качественный")
+- amount: точное количество с единицей измерения (г, кг, мл, л, шт, ст.л., ч.л., зубчик, пучок)
+- Если одинаковый продукт встречается несколько раз — просуммируй количество
+- НЕ включай: вода, соль, чёрный перец, растительное масло (это базовые продукты которые есть у всех)
+- Отвечай СТРОГО только JSON объектом — никакого текста до или после`;
 
-    const raw = await callGigaChat(system, `Извлеки список покупок:\n${recipe.slice(0, 3000)}`);
+    const raw = await callGigaChat(system, `Извлеки продукты для покупки из этого рецепта:\n\n${cleanRecipe}`, 1500);
+    console.log('[ShoppingList] raw length:', raw.length, 'preview:', raw.slice(0, 200));
 
-    // Надёжный парсинг — ищем JSON в ответе
     let items = [];
+
+    // Попытка 1 — найти JSON объект в ответе
     try {
-      // Убираем markdown и лишний текст вокруг JSON
-      const jsonMatch = raw.match(/\{[\s\S]*"items"[\s\S]*\}/);
+      const jsonMatch = raw.match(/\{[\s\S]*?"items"[\s\S]*?\}\s*$/m) || raw.match(/\{[\s\S]*?"items"[\s\S]*?\}/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        items = parsed.items || [];
-      } else {
-        // Fallback — пробуем распарсить напрямую
-        const clean = raw.replace(/```json\n?|```\n?/g, '').trim();
-        const parsed = JSON.parse(clean);
-        items = parsed.items || [];
+        items = JSON.parse(jsonMatch[0]).items || [];
       }
-    } catch (parseErr) {
-      // Последний fallback — парсим текст построчно
-      console.warn('JSON parse failed, fallback to text parsing:', raw.slice(0, 200));
-      const lines = raw.split('\n').filter(l => l.trim());
-      items = lines
-        .filter(l => /[а-яё]/i.test(l))
-        .map(l => {
-          const clean = l.replace(/^[-•*\d.]+\s*/, '').trim();
-          const amtMatch = clean.match(/(\d+\s*(?:г|кг|мл|л|шт|штук|ст\.?л\.?|ч\.?л\.?|зубчик|пучок|щепотк)[^\s]*)/i);
-          return {
-            name: clean.replace(amtMatch?.[0] || '', '').replace(/[—–-]\s*$/, '').trim(),
-            amount: amtMatch?.[0] || ''
-          };
-        })
-        .filter(i => i.name.length > 1);
+    } catch {}
+
+    // Попытка 2 — почистить markdown обёртку
+    if (!items.length) {
+      try {
+        const clean = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+        items = JSON.parse(clean).items || [];
+      } catch {}
     }
+
+    // Попытка 3 — построчный парсинг
+    if (!items.length) {
+      console.warn('[ShoppingList] JSON parse failed, text fallback');
+      const lines = raw.split('\n')
+        .map(l => l.trim())
+        .filter(l => l && /[а-яё]/i.test(l) && !/^[{}[\]"]/.test(l));
+
+      items = lines.map(l => {
+        const clean = l.replace(/^[-•*\d.)\s]+/, '').replace(/[",]$/g, '').trim();
+        const sepIdx = clean.search(/[—–-]\s*\d/);
+        if (sepIdx > 0) {
+          return {
+            name: clean.slice(0, sepIdx).trim().toLowerCase(),
+            amount: clean.slice(sepIdx + 1).replace(/^[—–-\s]+/, '').trim()
+          };
+        }
+        const amtMatch = clean.match(/(\d+(?:[.,]\d+)?\s*(?:г|кг|мл|л|шт|ст\.?л\.?|ч\.?л\.?|зубчик[ова]*|пучок[аи]*|щепотк[аи]*)[^\s,]*)/i);
+        if (amtMatch) {
+          return {
+            name: clean.replace(amtMatch[0], '').replace(/[—–\-:,.]+\s*$/g, '').trim().toLowerCase(),
+            amount: amtMatch[0]
+          };
+        }
+        return { name: clean.toLowerCase(), amount: '' };
+      }).filter(i => i.name && i.name.length > 1 && i.name.length < 60);
+    }
+
+    // Финальная фильтрация
+    items = items
+      .filter(i => i.name && i.name.length > 1 && /[а-яё]/i.test(i.name))
+      .filter(i => !/^(вода|соль|перец|масло)\b/i.test(i.name))
+      // Дедупликация
+      .filter((item, idx, arr) => arr.findIndex(x => x.name === item.name) === idx);
 
     res.json({ items });
   } catch (e) {
@@ -563,50 +839,77 @@ router.post('/recipe/shopping-list', async (req, res) => {
   }
 });
 
-// ===== VIP: СПИСОК ПОКУПОК ДЛЯ МЕНЮ НА НЕДЕЛЮ =====
+// ===== СПИСОК ПОКУПОК ДЛЯ МЕНЮ НА НЕДЕЛЮ =====
 router.post('/vip/weekmenu-shopping', async (req, res) => {
   try {
     const tgId = req.telegramUser.id;
     const { menu } = req.body;
+
+    if (!menu || menu.length < 50) {
+      return res.status(400).json({ error: 'Меню слишком короткое' });
+    }
+
+    // Доступно тем у кого есть меню — VIP или использовавшим бесплатное
     const { rows: [sub] } = await global.pool.query(
       `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,
       [tgId]
     );
-    if (!sub || sub.plan_type !== 'VIP') return res.status(403).json({ error: 'Только для VIP' });
+    const { rows: [user] } = await global.pool.query(`SELECT * FROM users WHERE tg_id=$1`, [tgId]);
+    if (sub?.plan_type !== 'VIP' && !user?.free_weekmenu_used) {
+      return res.status(403).json({ error: 'Сначала создай меню на неделю' });
+    }
 
-    const system = `Ты помощник по закупкам продуктов. Из текста меню на неделю извлеки ВСЕ уникальные ингредиенты, суммируй их по всем дням.
-Верни ТОЛЬКО валидный JSON без лишнего текста:
-{"items":[{"name":"название","amount":"суммарное количество","days":"пн, ср, пт"}]}
+    const system = `Ты помощник по закупкам продуктов. Из текста меню на неделю извлеки все уникальные ингредиенты и просуммируй их по всем дням.
+
+Верни ТОЛЬКО валидный JSON объект без какого-либо другого текста:
+{"items":[{"name":"куриное филе","amount":"1200г","days":"пн, ср, пт"}]}
 
 Правила:
-- Суммируй одинаковые продукты по всем дням (напр. "куриное филе — 1200г")
-- В поле days укажи сокращённо в какие дни нужен продукт (пн, вт, ср...)
-- НЕ включай: воду, соль, перец, растительное масло
-- Группируй по категориям в name если нужно
-- Отвечай ТОЛЬКО JSON`;
+- name: строчными буквами, только название продукта
+- amount: суммарное количество с единицей (напр. "1200г", "5 шт")
+- days: краткие сокращения дней через запятую (пн, вт, ср, чт, пт, сб, вс)
+- Если одинаковый продукт в нескольких блюдах — просуммируй количество
+- НЕ включай: вода, соль, перец, растительное масло
+- Отвечай СТРОГО только JSON`;
 
-    // Меню может быть очень длинным — берём первые 6000 символов
-    const menuTrunc = (menu || '').slice(0, 6000);
-    const raw = await callGigaChat(system, `Меню на неделю:\n${menuTrunc}`, 2000);
+    const menuTrunc = (menu || '').replace(/[═─]+/g, '').slice(0, 7000);
+    const raw = await callGigaChat(system, `Меню на неделю:\n${menuTrunc}`, 2500);
 
     let items = [];
     try {
-      const jsonMatch = raw.match(/\{[\s\S]*"items"[\s\S]*\}/);
-      if (jsonMatch) {
-        items = JSON.parse(jsonMatch[0]).items || [];
-      } else {
-        items = JSON.parse(raw.replace(/```json\n?|```\n?/g, '').trim()).items || [];
-      }
-    } catch {
-      // Fallback построчно
-      items = raw.split('\n')
-        .filter(l => /[а-яё]/i.test(l) && l.trim().length > 2)
-        .map(l => ({ name: l.replace(/^[-•*\d.]+\s*/, '').trim(), amount: '', days: '' }))
-        .filter(i => i.name.length > 1);
+      const m = raw.match(/\{[\s\S]*?"items"[\s\S]*?\}\s*$/m) || raw.match(/\{[\s\S]*?"items"[\s\S]*?\}/);
+      if (m) items = JSON.parse(m[0]).items || [];
+    } catch {}
+
+    if (!items.length) {
+      try {
+        const clean = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+        items = JSON.parse(clean).items || [];
+      } catch {}
     }
+
+    if (!items.length) {
+      // Текстовый fallback
+      items = raw.split('\n')
+        .map(l => l.trim())
+        .filter(l => l && /[а-яё]/i.test(l) && !/^[{}[\]"]/.test(l))
+        .map(l => ({
+          name: l.replace(/^[-•*\d.)\s]+/, '').replace(/[",]$/g, '').trim().toLowerCase(),
+          amount: '',
+          days: ''
+        }))
+        .filter(i => i.name && i.name.length > 1 && i.name.length < 60);
+    }
+
+    // Финальная фильтрация
+    items = items
+      .filter(i => i.name && i.name.length > 1 && /[а-яё]/i.test(i.name))
+      .filter(i => !/^(вода|соль|перец|масло)\b/i.test(i.name))
+      .filter((item, idx, arr) => arr.findIndex(x => x.name === item.name) === idx);
 
     res.json({ items });
   } catch (e) {
+    console.error('Week shopping error:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -617,13 +920,16 @@ router.post('/vip/diet', async (req, res) => {
     const tgId = req.telegramUser.id;
     const { question } = req.body;
     const { rows: [sub] } = await global.pool.query(
-      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`,      [tgId]
+      `SELECT * FROM subscriptions WHERE user_id=$1 AND is_active=TRUE AND expires_at>NOW() LIMIT 1`, [tgId]
     );
     if (!sub || sub.plan_type !== 'VIP') {
       return res.status(403).json({ error: 'Только для VIP' });
     }
+
+    const { allergies } = await getUserPrefs(tgId);
+
     const system = `Ты профессиональный диетолог и нутрициолог с 15-летним практическим опытом. Консультируешь по вопросам питания, составу продуктов, диетам и здоровому образу жизни через еду.
-${FOOD_ONLY_GUARD}
+${FOOD_ONLY_GUARD}${allergyBlock(allergies)}
 ФОРМАТ ОТВЕТА:
 
 🥗 [Краткий заголовок ответа]
