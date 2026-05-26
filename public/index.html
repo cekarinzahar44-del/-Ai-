@@ -105,6 +105,41 @@
         </div>
       </div>
 
+      <!-- Слайд 4 — аллергии и порции -->
+      <div class="onb-slide" data-slide="3">
+        <div class="onb-bg onb-bg-4"></div>
+        <div class="onb-content">
+          <div class="onb-emoji-big">🛡️</div>
+          <h2 class="onb-title">Безопасные<br>рецепты для тебя</h2>
+          <p class="onb-desc">Расскажи о своих особенностях — шеф учтёт их в каждом рецепте.</p>
+
+          <div class="onb-form">
+            <div class="onb-form-label">🚫 Аллергии и непереносимости</div>
+            <div class="textarea-wrap">
+              <textarea id="onb-allergies" rows="2" placeholder="Например: орехи, лактоза, морепродукты"></textarea>
+            </div>
+            <div class="onb-form-hint">Через запятую. Если ничего нет — оставь пустым.</div>
+
+            <div class="onb-allergy-chips">
+              <button type="button" class="onb-allergy-chip" data-val="орехи">🥜 Орехи</button>
+              <button type="button" class="onb-allergy-chip" data-val="лактоза">🥛 Лактоза</button>
+              <button type="button" class="onb-allergy-chip" data-val="глютен">🌾 Глютен</button>
+              <button type="button" class="onb-allergy-chip" data-val="яйца">🥚 Яйца</button>
+              <button type="button" class="onb-allergy-chip" data-val="морепродукты">🦐 Морепродукты</button>
+              <button type="button" class="onb-allergy-chip" data-val="мёд">🍯 Мёд</button>
+            </div>
+
+            <div class="onb-form-label" style="margin-top:14px;">👥 Обычно готовлю на</div>
+            <div class="portions-row" style="justify-content:center;gap:14px;">
+              <button type="button" class="portions-btn" onclick="onbChangePortions(-1)">−</button>
+              <input type="number" id="onb-portions" value="2" min="1" max="10" readonly>
+              <button type="button" class="portions-btn" onclick="onbChangePortions(1)">+</button>
+            </div>
+            <div class="onb-form-hint">человек</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Точки-индикаторы -->
@@ -112,6 +147,7 @@
       <div class="onb-dot active" data-dot="0"></div>
       <div class="onb-dot" data-dot="1"></div>
       <div class="onb-dot" data-dot="2"></div>
+      <div class="onb-dot" data-dot="3"></div>
     </div>
 
     <!-- Кнопки -->
@@ -238,6 +274,11 @@
 
     <h2 id="recipe-title" class="recipe-title"></h2>
 
+    <button id="btn-fav-recipe" class="fav-btn" onclick="toggleFavorite()" title="В избранное">
+      <span class="fav-icon">🤍</span>
+      <span class="fav-text">В избранное</span>
+    </button>
+
     <div class="voice-tip">
       &#x1F4A1; Скажи: <b>«далее»</b>, <b>«назад»</b>, <b>«повтори»</b>, <b>«стоп»</b>
     </div>
@@ -268,13 +309,13 @@
     </div>
 
     <div class="recipe-extras">
-      <button id="btn-shopping-list" class="extra-btn" onclick="showShoppingList()">
+      <button id="btn-shopping-list" class="extra-btn extra-btn-primary" onclick="showShoppingList()">
         <span class="extra-icon">&#x1F6D2;</span>
         <span class="extra-info">
           <b>Список покупок</b>
-          <small>Все ингредиенты одним нажатием</small>
+          <small>Все ингредиенты одним нажатием · Бесплатно</small>
         </span>
-        <span id="lock-shopping" class="extra-lock">&#x1F512;</span>
+        <span class="extra-arrow">&#x203A;</span>
       </button>
       <button id="btn-share-recipe" class="extra-btn" onclick="shareRecipe()">
         <span class="extra-icon">&#x1F4E4;</span>
@@ -325,77 +366,6 @@
     </div>
   </div>
 
-  <!-- FRIDGE SCAN -->
-  <div id="screen-fridge" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('profile')">&#x2190; Назад</button>
-      <h2 class="screen-title">Фото холодильника</h2>
-      <p class="screen-sub">ИИ подберёт рецепт по фото</p>
-    </div>
-    <div class="form-wrap">
-      <div class="vip-card">
-        <span class="vip-card-icon">&#x1F4F8;</span>
-        <h3>Сфотографируй холодильник</h3>
-        <p class="hint" style="margin-bottom:18px;text-align:left;">Загрузи фото — ИИ определит продукты и предложит лучшее блюдо</p>
-        <div class="upload-zone" id="fridge-upload-zone" onclick="document.getElementById('fridge-photo').click()">
-          <div id="fridge-preview-wrap" style="display:none;">
-            <img id="fridge-preview" src="" alt="" style="width:100%;border-radius:12px;max-height:180px;object-fit:cover;">
-          </div>
-          <div id="fridge-upload-ph">
-            <div style="font-size:42px;margin-bottom:8px;">&#x1F4F7;</div>
-            <div style="font-size:15px;font-weight:600;color:var(--text-2);">Нажми чтобы загрузить</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:3px;">JPG, PNG до 10 МБ</div>
-          </div>
-        </div>
-        <input type="file" id="fridge-photo" accept="image/*" capture="environment" style="display:none;" onchange="previewFridgePhoto(this)">
-        <button id="btn-analyze-fridge" class="primary-btn gold full-btn" style="margin-top:14px;" onclick="analyzeFridge()" disabled>
-          &#x1F50D; Что приготовить?
-        </button>
-      </div>
-      <div id="fridge-result" class="step-card" style="display:none;">
-        <div class="step-label">Рекомендация шефа</div>
-        <div id="fridge-text" class="step-text"></div>
-        <button class="primary-btn full-btn" style="margin-top:16px;" onclick="cookFromFridgeSuggestion()">Найти рецепт &#x2192;</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- FRIDGE TEXT -->
-  <div id="screen-fridge-text" class="screen">
-    <div class="screen-header">
-      <button class="back-btn" onclick="showScreen('profile')">&#x2190; Назад</button>
-      <h2 class="screen-title">Что есть в доме?</h2>
-      <p class="screen-sub">Спасение из остатков продуктов</p>
-    </div>
-    <div class="form-wrap">
-      <div class="vip-card">
-        <span class="vip-card-icon">&#x1F9CA;</span>
-        <h3>Режим пустого холодильника</h3>
-        <p class="hint" style="margin-bottom:18px;text-align:left;">Перечисли что есть — шеф придумает блюдо без похода в магазин</p>
-        <div class="form-block">
-          <div class="form-label">Продукты через запятую</div>
-          <div class="textarea-wrap">
-            <textarea id="fridge-ingredients" rows="4" placeholder="Яйца, картофель, лук, сметана&#x2026;"></textarea>
-          </div>
-        </div>
-        <div class="form-block">
-          <div class="form-label">Ограничения</div>
-          <div class="pref-chips" id="fridge-prefs">
-            <button class="pref" data-pref="Быстро до 20 мин">&#x26A1; Быстро</button>
-            <button class="pref" data-pref="Без духовки">&#x1F373; Без духовки</button>
-            <button class="pref" data-pref="Минимум посуды">&#x1F963; Мало посуды</button>
-          </div>
-        </div>
-        <button id="btn-rescue-cook" class="primary-btn full-btn" onclick="rescueCook()">&#x1FA84; Спаси ужин!</button>
-      </div>
-      <div id="fridge-text-result" class="step-card" style="display:none;margin-top:16px;">
-        <div class="step-label">Блюдо найдено</div>
-        <div id="fridge-text-content" class="step-text"></div>
-        <button class="primary-btn full-btn" style="margin-top:16px;" onclick="cookFridgeText()">Приготовить &#x2192;</button>
-      </div>
-    </div>
-  </div>
-
   <!-- SUBSCRIPTION -->
   <div id="screen-subscription" class="screen">
     <div class="screen-header">
@@ -443,8 +413,6 @@
           <li>&#x1F957; ИИ&#x2011;диетолог</li>
           <li>&#x1F4CA; КБЖУ на порцию</li>
           <li>&#x1F4C5; Меню на неделю</li>
-          <li class="new-feat">&#x1F4F8; Фото холодильника</li>
-          <li class="new-feat">&#x1F9CA; Что есть в доме</li>
           <li class="new-feat">&#x1F4E4; Поделиться рецептом</li>
         </ul>
         <button class="primary-btn gold-btn full-btn" onclick="buyPlan('VIP')">Выбрать VIP</button>
@@ -490,6 +458,25 @@
       <h2 class="screen-title">Меню на неделю</h2>
     </div>
     <div class="form-wrap">
+
+      <!-- Баннер про бесплатное меню (для FREE пользователей) -->
+      <div id="wm-free-banner" class="wm-banner" style="display:none;">
+        <div class="wm-banner-icon">🎁</div>
+        <div class="wm-banner-text">
+          <b>Первое меню — в подарок!</b>
+          <small>Шеф составит план на 7 дней с твоими аллергиями</small>
+        </div>
+      </div>
+
+      <!-- Баннер про оплаченный VIP — больше не показываем рекламу -->
+      <div id="wm-used-banner" class="wm-banner wm-banner-info" style="display:none;">
+        <div class="wm-banner-icon">💎</div>
+        <div class="wm-banner-text">
+          <b>Бесплатное меню использовано</b>
+          <small>Оформи VIP для безлимитной генерации меню каждую неделю</small>
+        </div>
+        <button class="wm-banner-btn" onclick="showScreen('subscription')">VIP</button>
+      </div>
 
       <!-- Форма генерации -->
       <div class="vip-card">
@@ -640,26 +627,36 @@
       </div>
     </div>
 
-    <div class="section-label">PRO функции</div>
+    <div class="section-label">Мои рецепты</div>
     <div class="menu-list">
-      <button class="menu-item" onclick="gatedAction('history','PRO')">
+      <button class="menu-item" onclick="showRecipesList('all')">
         <span>&#x1F4D6; История рецептов</span><span class="nav-arrow">&#x203A;</span>
+      </button>
+      <button class="menu-item" onclick="showRecipesList('favorites')">
+        <span>&#x2764;&#xFE0F; Избранное</span><span class="nav-arrow">&#x203A;</span>
+      </button>
+    </div>
+
+    <div class="section-label">Настройки</div>
+    <div class="menu-list">
+      <button class="menu-item" onclick="showAllergiesEditor()">
+        <span>&#x1F6E1;&#xFE0F; Мои аллергии</span><span class="nav-arrow">&#x203A;</span>
+      </button>
+      <button class="menu-item" onclick="showModeEditor()">
+        <span id="mode-menu-text">&#x1F3AF; Режим: Обычный <span class="vip-badge">VIP</span></span><span class="nav-arrow">&#x203A;</span>
+      </button>
+      <button class="menu-item" onclick="showReminderEditor()">
+        <span id="reminder-menu-text">&#x1F514; Напоминания: вкл</span><span class="nav-arrow">&#x203A;</span>
       </button>
     </div>
 
     <div class="section-label">VIP функции</div>
     <div class="menu-list">
-      <button class="menu-item" onclick="gatedAction('weekmenu','VIP')">
-        <span>&#x1F4C5; Меню на неделю</span><span class="nav-arrow">&#x203A;</span>
+      <button class="menu-item" onclick="showScreen('weekmenu')">
+        <span>&#x1F4C5; Меню на неделю <span class="gift-badge" id="weekmenu-gift-badge" style="display:none;">подарок 🎁</span></span><span class="nav-arrow">&#x203A;</span>
       </button>
       <button class="menu-item" onclick="gatedAction('diet','VIP')">
         <span>&#x1F957; ИИ&#x2011;Диетолог</span><span class="nav-arrow">&#x203A;</span>
-      </button>
-      <button class="menu-item" onclick="gatedAction('fridge','VIP')">
-        <span>&#x1F4F8; Фото холодильника</span><span class="nav-arrow">&#x203A;</span>
-      </button>
-      <button class="menu-item" onclick="gatedAction('fridge-text','VIP')">
-        <span>&#x1F9CA; Что есть в доме?</span><span class="nav-arrow">&#x203A;</span>
       </button>
     </div>
 
@@ -670,160 +667,16 @@
     </div>
   </div>
 
+
 <script src="/app.js"></script>
 <script>
+/* Все основные функции (showScreen, gatedAction, RecipeManager, StepTimer, loadHistory,
+   showShoppingList, copyShoppingList, shareRecipe) объявлены в app.js — здесь только
+   простой хелпер для onclick из HTML. */
 function changePortions(delta) {
   var inp = document.getElementById("portions");
   inp.value = Math.max(1, Math.min(20, (parseInt(inp.value) || 2) + delta));
 }
-function gatedAction(screen, required) {
-  var plan = window._userPlan || "FREE";
-  var ok = required === "PRO" ? (plan === "PRO" || plan === "VIP") : (plan === "VIP");
-  if (!ok) { showScreen("subscription"); return; }
-  if (screen === "history") loadHistory();
-  showScreen(screen);
-}
-/* RecipeHistory объявлен в app.js */
-function loadHistory() {
-  var list = RecipeHistory.load();
-  var wrap = document.getElementById("history-list");
-  var empty = document.getElementById("history-empty");
-  wrap.innerHTML = "";
-  if (!list.length) { empty.style.display = "block"; return; }
-  empty.style.display = "none";
-  list.forEach(function(item) {
-    var date = new Date(item.ts).toLocaleDateString("ru-RU", { day:"2-digit", month:"short" });
-    var el = document.createElement("div");
-    el.className = "hist-item";
-    el.innerHTML = "<div class='hist-left'><div class='hist-title'>" + item.title + "</div><div class='hist-date'>" + date + "</div></div><button class='hist-btn'>Открыть</button>";
-    el.querySelector("button").onclick = function() {
-      RecipeManager.load({ title: item.title, fullText: item.fullText, steps: item.fullText.split(/\n\s*\n/).filter(function(s){return s.trim().length>10;}), total: 1 });
-      showScreen("recipe");
-    };
-    wrap.appendChild(el);
-  });
-}
-async function showShoppingList() {
-  var plan = window._userPlan || "FREE";
-  if (plan === "FREE") { showScreen("subscription"); return; }
-  if (!RecipeManager.current) return;
-  showScreen("shopping");
-  document.getElementById("shopping-recipe-name").textContent = RecipeManager.current.title.replace(/<[^>]+>/g,"");
-  document.getElementById("shopping-loading").style.display = "flex";
-  document.getElementById("shopping-list-wrap").style.display = "none";
-  try {
-    var res = await fetch("/api/recipe/shopping-list", { method:"POST", headers:{"Content-Type":"application/json","x-telegram-init-data": window._initData||""}, body: JSON.stringify({ recipe: RecipeManager.current.fullText || RecipeManager.current.steps.join("\n") }) });
-    var data = await res.json();
-    var items = data.items || [];
-    window._shoppingList = items;
-    var wrap = document.getElementById("shopping-items");
-    wrap.innerHTML = "";
-    items.forEach(function(item) {
-      var el = document.createElement("div");
-      el.className = "check-item";
-      var chk = document.createElement('input');
-      chk.type = 'checkbox';
-      chk.addEventListener('change', function(){ this.closest('.check-item').classList.toggle('done', this.checked); });
-      var lbl = document.createElement('label'); lbl.className = 'check-lbl';
-      var mark = document.createElement('span'); mark.className = 'checkmark';
-      lbl.appendChild(chk); lbl.appendChild(mark);
-      var nm = document.createElement('span'); nm.className = 'check-name'; nm.textContent = item.name;
-      var amt = document.createElement('span'); amt.className = 'check-amt'; amt.textContent = item.amount || '';
-      el.appendChild(lbl); el.appendChild(nm); el.appendChild(amt);
-      wrap.appendChild(el);
-    });
-    document.getElementById("shopping-loading").style.display = "none";
-    document.getElementById("shopping-list-wrap").style.display = "block";
-  } catch(e) {
-    document.getElementById("shopping-loading").style.display = "none";
-    document.getElementById("shopping-list-wrap").innerHTML = "<p style='color:var(--text-muted);padding:20px 0'>Не удалось загрузить список</p>";
-    document.getElementById("shopping-list-wrap").style.display = "block";
-  }
-}
-function copyShoppingList() {
-  var items = window._shoppingList || [];
-  var text = "Shopping list:\n\n" + items.map(function(i){ return "- " + i.name + (i.amount ? " — " + i.amount : ""); }).join("\n");
-  if (navigator.clipboard) { navigator.clipboard.writeText(text).then(function(){ var btn=event.currentTarget; btn.textContent="Скопировано!"; setTimeout(function(){ btn.textContent="Скопировать список"; },2000); }); }
-}
-async function shareRecipe() {
-  var plan = window._userPlan || "FREE";
-  if (plan !== "VIP") { showScreen("subscription"); return; }
-  if (!RecipeManager.current) return;
-  var title = RecipeManager.current.title.replace(/<[^>]+>/g,"");
-  var text = title + "\n\nРецепт приготовлен с Шеф-Повар AI";
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.shareMessage) { window.Telegram.WebApp.shareMessage({ text: text }); }
-  else if (navigator.share) { navigator.share({ title: title, text: text }); }
-  else { navigator.clipboard.writeText(text); alert("Рецепт скопирован!"); }
-}
-function previewFridgePhoto(input) {
-  var file = input.files[0]; if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    document.getElementById("fridge-preview").src = e.target.result;
-    document.getElementById("fridge-preview-wrap").style.display = "block";
-    document.getElementById("fridge-upload-ph").style.display = "none";
-    document.getElementById("btn-analyze-fridge").disabled = false;
-  };
-  reader.readAsDataURL(file);
-}
-async function analyzeFridge() {
-  var plan = window._userPlan || "FREE";
-  if (plan !== "VIP") { showScreen("subscription"); return; }
-  var file = document.getElementById("fridge-photo").files[0]; if (!file) return;
-  var btn = document.getElementById("btn-analyze-fridge");
-  btn.disabled = true; btn.textContent = "Анализирую...";
-  try {
-    var fd = new FormData(); fd.append("photo", file);
-    var res = await fetch("/api/vip/fridge-scan", { method:"POST", headers:{"x-telegram-init-data": window._initData||""}, body: fd });
-    var data = await res.json();
-    document.getElementById("fridge-text").innerHTML = data.suggestion || "Не удалось определить";
-    document.getElementById("fridge-result").style.display = "block";
-    window._fridgeSuggestion = data.dish;
-  } catch(e) { alert("Ошибка. Попробуй снова."); }
-  finally { btn.disabled = false; btn.textContent = "Что приготовить?"; }
-}
-function cookFromFridgeSuggestion() { if (window._fridgeSuggestion) { document.getElementById("dish-input").value = window._fridgeSuggestion; showScreen("details"); } }
-var _fridgeTextPrefs = [];
-document.querySelectorAll("#fridge-prefs .pref").forEach(function(p) {
-  p.addEventListener("click", function() {
-    p.classList.toggle("active");
-    var v = p.dataset.pref, idx = _fridgeTextPrefs.indexOf(v);
-    if (idx > -1) _fridgeTextPrefs.splice(idx,1); else _fridgeTextPrefs.push(v);
-  });
-});
-async function rescueCook() {
-  var plan = window._userPlan || "FREE";
-  if (plan !== "VIP") { showScreen("subscription"); return; }
-  var ingredients = document.getElementById("fridge-ingredients").value.trim();
-  if (!ingredients) { alert("Введи что есть в холодильнике"); return; }
-  var btn = document.getElementById("btn-rescue-cook");
-  btn.disabled = true; btn.textContent = "Придумываю...";
-  try {
-    var res = await fetch("/api/vip/rescue-cook", { method:"POST", headers:{"Content-Type":"application/json","x-telegram-init-data": window._initData||""}, body: JSON.stringify({ ingredients: ingredients, prefs: _fridgeTextPrefs.join(", ") }) });
-    var data = await res.json();
-    document.getElementById("fridge-text-content").innerHTML = data.suggestion || "Попробуй снова";
-    document.getElementById("fridge-text-result").style.display = "block";
-    window._rescueDish = data.dish;
-  } catch(e) { alert("Ошибка. Попробуй снова."); }
-  finally { btn.disabled = false; btn.textContent = "Спаси ужин!"; }
-}
-function cookFridgeText() { if (window._rescueDish) { document.getElementById("dish-input").value = window._rescueDish; showScreen("details"); } }
-var StepTimer = {
-  interval: null, seconds: 0, running: false,
-  start: function(secs) { this.stop(); this.seconds = secs; this.running = true; this.render(); var self = this; this.interval = setInterval(function(){ if (self.seconds > 0) { self.seconds--; self.render(); } else { self.stop(); self.onDone(); } }, 1000); },
-  stop: function() { clearInterval(this.interval); this.running = false; },
-  render: function() { var m = String(Math.floor(this.seconds/60)).padStart(2,"0"), s = String(this.seconds%60).padStart(2,"0"); var el = document.getElementById("step-timer-display"); if (el) el.textContent = m + ":" + s; var btn = document.getElementById("btn-step-timer"); if (btn) btn.textContent = this.running ? "Стоп" : "Старт"; },
-  onDone: function() { if ("vibrate" in navigator) navigator.vibrate([200,100,200]); alert("Время вышло! Переходи к следующему шагу."); }
-};
-document.addEventListener("click", function(e) {
-  if (e.target.id === "btn-step-timer") {
-    var plan = window._userPlan || "FREE";
-    if (plan === "FREE") { showScreen("subscription"); return; }
-    if (StepTimer.running) { StepTimer.stop(); StepTimer.render(); }
-    else { var mins = parseInt(prompt("Введи время (минут):", "5") || "5"); if (!isNaN(mins) && mins > 0) StepTimer.start(mins * 60); }
-  }
-});
-/* RecipeManager.load расширен в app.js */
 </script>
 </body>
 </html>
