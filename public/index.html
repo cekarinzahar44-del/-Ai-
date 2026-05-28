@@ -524,6 +524,15 @@
         </div>
         <button id="btn-generate-weekmenu" class="primary-btn gold-btn full-btn">&#x2728; Составить меню</button>
         <button id="btn-reset-weekmenu" class="ghost-btn full-btn" style="display:none;margin-top:10px;">&#x1F5D1; Удалить и создать новое</button>
+
+        <!-- Счётчик истории + сброс -->
+        <div id="wm-history-info" class="wm-history-info" style="display:none;">
+          <div class="wm-history-text">
+            <span>&#x1F4DA;</span>
+            <span id="wm-history-count-text">В истории <b id="wm-history-count">0</b> блюд — шеф не повторяется</span>
+          </div>
+          <button class="wm-history-reset" onclick="resetWeekmenuHistory()">Сбросить</button>
+        </div>
       </div>
 
       <!-- Результат -->
