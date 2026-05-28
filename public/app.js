@@ -561,8 +561,43 @@ function showScreen(name) {
       const resetBtn = $('btn-reset-weekmenu');
       if (resetBtn) resetBtn.style.display = 'block';
     }
+
+    // Подгружаем счётчик блюд в истории
+    loadWeekmenuHistoryCount();
   }
 }
+
+window.loadWeekmenuHistoryCount = async function() {
+  const wrap = $('wm-history-info');
+  if (!wrap) return;
+  try {
+    const data = await API.request('/api/vip/weekmenu-history-count');
+    const count = data.count || 0;
+    if (count > 0) {
+      $('wm-history-count').textContent = count;
+      // Слово "блюд" в правильной форме
+      const word = count === 1 ? 'блюдо' : (count < 5 ? 'блюда' : 'блюд');
+      $('wm-history-count-text').innerHTML = `В истории <b id="wm-history-count">${count}</b> ${word} — шеф не повторяется`;
+      wrap.style.display = 'flex';
+    } else {
+      wrap.style.display = 'none';
+    }
+  } catch {
+    wrap.style.display = 'none';
+  }
+};
+
+window.resetWeekmenuHistory = async function() {
+  if (!confirm('Очистить историю блюд? Шеф сможет снова предлагать те же блюда что были раньше.')) return;
+  try {
+    await API.request('/api/vip/weekmenu-reset-history', { method: 'POST' });
+    toast('🔄 История блюд очищена');
+    hapticNotify('success');
+    loadWeekmenuHistoryCount();
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+  }
+};
 window.showScreen = showScreen;
 
 // ============================================================
@@ -1662,6 +1697,9 @@ $('btn-generate-weekmenu').addEventListener('click', async () => {
     $('wm-full-wrap').style.display = 'none';
     const resetBtn = $('btn-reset-weekmenu');
     if (resetBtn) resetBtn.style.display = 'block';
+
+    // Обновляем счётчик истории блюд
+    loadWeekmenuHistoryCount();
 
     setTimeout(() => $('weekmenu-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
