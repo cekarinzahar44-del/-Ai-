@@ -129,36 +129,138 @@ const Voice = {
   _mediaRecorder: null,
   _chunks: [],
   isRecording: false,
+  isSpeaking: false,
+  _voices: [],
+  _voicesReady: false,
 
+  // === Инициализация — выбираем лучший голос на устройстве ===
+  init() {
+    if (!('speechSynthesis' in window)) return;
+
+    const loadVoices = () => {
+      this._voices = window.speechSynthesis.getVoices();
+      if (this._voices.length > 0) {
+        this._voicesReady = true;
+        // Один раз логируем для диагностики
+        const ruVoices = this._voices.filter(v => v.lang.startsWith('ru'));
+        if (ruVoices.length) {
+          console.log('[Voice] Русские голоса:', ruVoices.map(v => v.name).join(', '));
+        }
+      }
+    };
+
+    loadVoices();
+    if (!this._voicesReady) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  },
+
+  // === Выбор лучшего русского женского голоса ===
+  _pickBestVoice() {
+    if (!this._voices.length) this._voices = window.speechSynthesis.getVoices();
+    const ru = this._voices.filter(v => v.lang === 'ru-RU' || v.lang.startsWith('ru'));
+    if (!ru.length) return null;
+
+    // Приоритеты — лучшие голоса с естественным звучанием
+    const priorities = [
+      /Yandex/i,                    // Яндекс голоса — самые приятные
+      /Milena|Katya|Alyona|Tatiana/i, // iOS женские
+      /Google.*ru|русск/i,          // Google русский
+      /Microsoft.*Svetlana|Irina/i,  // Microsoft Edge
+      /female|жен/i,                 // любой женский
+    ];
+
+    for (const re of priorities) {
+      const found = ru.find(v => re.test(v.name));
+      if (found) return found;
+    }
+    return ru[0]; // fallback — первый русский
+  },
+
+  // === ОЗВУЧКА — только Web Speech (быстро, бесплатно, приятный голос) ===
   speak(text) {
     const clean = prepareForTTS(text);
     if (!clean) return;
     this.stop();
-    const chunks = [];
-    let rem = clean;
-    while (rem.length > 0) {
-      const cut = rem.length > 200 ? (rem.lastIndexOf(' ', 200) > 100 ? rem.lastIndexOf(' ', 200) : 200) : rem.length;
-      chunks.push(rem.slice(0, cut).trim());
-      rem = rem.slice(cut).trim();
+
+    if (!('speechSynthesis' in window)) {
+      console.warn('[Voice] speechSynthesis недоступен');
+      return;
     }
+
+    // Готовим — отменяем предыдущее
+    window.speechSynthesis.cancel();
+
+    // Если голоса не загружены — ждём
+    if (!this._voicesReady) {
+      this._voices = window.speechSynthesis.getVoices();
+      this._voicesReady = this._voices.length > 0;
+    }
+
+    // Разбиваем длинный текст на части (браузеры обрывают >300 символов)
+    const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+    const chunks = [];
+    let buf = '';
+    for (const s of sentences) {
+      if ((buf + s).length > 220) {
+        if (buf) chunks.push(buf);
+        buf = s;
+      } else {
+        buf += s;
+      }
+    }
+    if (buf) chunks.push(buf);
+
+    const voice = this._pickBestVoice();
+    this.isSpeaking = true;
+    this._updateSpeakBtn();
+
     let i = 0;
-    const next = () => {
-      if (i >= chunks.length) return;
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ru&client=tw-ob&q=${encodeURIComponent(chunks[i++])}`;
-      this._audio = new Audio(url);
-      this._audio.playbackRate = 0.95;
-      this._audio.onended = next;
-      this._audio.onerror = next;
-      this._audio.play().catch(() => {});
+    const speakNext = () => {
+      if (i >= chunks.length) {
+        this.isSpeaking = false;
+        this._updateSpeakBtn();
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(chunks[i++]);
+      utter.lang = 'ru-RU';
+      utter.rate = 0.95;     // чуть медленнее обычного
+      utter.pitch = 1.05;    // чуть выше — теплее
+      utter.volume = 1;
+      if (voice) utter.voice = voice;
+
+      utter.onend = () => {
+        if (this.isSpeaking) speakNext();
+      };
+      utter.onerror = () => {
+        if (this.isSpeaking) speakNext();
+      };
+      window.speechSynthesis.speak(utter);
     };
-    next();
+
+    speakNext();
   },
 
   stop() {
     if (this._audio) { this._audio.pause(); this._audio.src = ''; this._audio = null; }
-    window.speechSynthesis?.cancel();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    this.isSpeaking = false;
+    this._updateSpeakBtn();
   },
 
+  _updateSpeakBtn() {
+    const btn = document.getElementById('btn-voice-read');
+    if (!btn) return;
+    if (this.isSpeaking) {
+      btn.classList.add('speaking');
+      btn.title = 'Остановить озвучку';
+    } else {
+      btn.classList.remove('speaking');
+      btn.title = 'Озвучить шаг';
+    }
+  },
+
+  // === ЗАПИСЬ ГОЛОСА ===
   async startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -188,6 +290,11 @@ const Voice = {
     });
   }
 };
+
+// Инициализация голосов при загрузке
+if (typeof window !== 'undefined') {
+  setTimeout(() => Voice.init(), 100);
+}
 
 // ============================================================
 //  РЕЦЕПТЫ В БД (история + избранное)
@@ -1164,17 +1271,25 @@ $('btn-generate').addEventListener('click', async () => {
 $('btn-next').addEventListener('click', () => RecipeManager.next());
 $('btn-prev').addEventListener('click', () => RecipeManager.prev());
 
+// Озвучка шага — переключатель play/stop
 $('btn-voice-read').addEventListener('click', () => {
   if (!RecipeManager.current) return;
-  Voice.speak(RecipeManager.current.steps[RecipeManager.step]);
-  haptic('light');
+  if (Voice.isSpeaking) {
+    Voice.stop();
+    haptic('light');
+    return;
+  }
+  const step = RecipeManager.current.steps[RecipeManager.step];
+  if (step) {
+    Voice.speak(step);
+    haptic('light');
+  }
 });
 
 $('btn-full-recipe').addEventListener('click', () => {
   if (!RecipeManager.current) return;
   const full = RecipeManager.current.steps.map((s, i) => `Шаг ${i+1}:\n${s.replace(/<[^>]+>/g,'')}`).join('\n\n');
   const titleClean = RecipeManager.current.title.replace(/<[^>]+>/g,'');
-  // Показываем в модальном окне вместо alert
   showFullRecipeModal(titleClean, full);
 });
 
@@ -1204,19 +1319,9 @@ window.copyFullRecipe = async function(title, text) {
   } catch { toast('Не удалось скопировать', 'error'); }
 };
 
-// Голосовая навигация
-$('btn-voice-nav').addEventListener('click', e => {
-  const btn = e.currentTarget;
-  if (!VoiceNav.isListening) {
-    VoiceNav.start();
-    btn.classList.add('recording');
-    btn.textContent = '🎙';
-    haptic('medium');
-  } else {
-    VoiceNav.stop();
-    btn.classList.remove('recording');
-    btn.textContent = '🎤';
-  }
+// Голосовая навигация — единый toggle
+$('btn-voice-nav')?.addEventListener('click', () => {
+  VoiceNav.toggle();
 });
 
 // Таймер
@@ -1815,41 +1920,192 @@ $('btn-print-weekmenu')?.addEventListener('click', () => {
 //  ГОЛОСОВАЯ НАВИГАЦИЯ ПО РЕЦЕПТУ
 // ============================================================
 
+// ============================================================
+//  ГОЛОСОВОЕ УПРАВЛЕНИЕ — навигация + wake-word команды
+// ============================================================
+
 const VoiceNav = {
   isListening: false,
   _rec: null,
+  _restartTimer: null,
+  _lastTranscript: '',
+  _lastTime: 0,
+
+  _supported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  },
 
   start() {
+    if (!this._supported()) {
+      toast('Голосовое управление не поддерживается в этом браузере', 'error');
+      return false;
+    }
+    if (this.isListening) return true;
+
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast('Голосовое управление не поддерживается', 'error'); return; }
     this._rec = new SR();
     this._rec.lang = 'ru-RU';
     this._rec.continuous = true;
     this._rec.interimResults = false;
+    this._rec.maxAlternatives = 1;
+
     this._rec.onresult = e => {
-      const text = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+      const res = e.results[e.results.length - 1];
+      if (!res || !res.isFinal) return;
+      const text = res[0].transcript.toLowerCase().trim();
+      // Анти-дублирование — иногда событие срабатывает дважды
+      const now = Date.now();
+      if (text === this._lastTranscript && now - this._lastTime < 2000) return;
+      this._lastTranscript = text;
+      this._lastTime = now;
+      console.log('[Voice]', text);
       this._handle(text);
     };
-    this._rec.onerror = () => {};
-    this._rec.onend = () => { if (this.isListening) this._rec.start(); };
-    this._rec.start();
-    this.isListening = true;
-    Voice.speak('Голосовое управление включено. Говори: далее, назад, повтори или стоп.');
+
+    this._rec.onerror = (e) => {
+      // no-speech и aborted — нормально, продолжаем
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        toast('Нет доступа к микрофону', 'error');
+        this.stop();
+      }
+    };
+
+    this._rec.onend = () => {
+      // Автоматически перезапускаем если не остановлено вручную
+      if (this.isListening) {
+        clearTimeout(this._restartTimer);
+        this._restartTimer = setTimeout(() => {
+          try { this._rec?.start(); } catch {}
+        }, 300);
+      }
+    };
+
+    try {
+      this._rec.start();
+      this.isListening = true;
+      this._updateBtnUI();
+      return true;
+    } catch (e) {
+      console.error('[VoiceNav] start failed:', e);
+      toast('Не удалось включить микрофон', 'error');
+      return false;
+    }
   },
 
   stop() {
     this.isListening = false;
-    this._rec?.stop();
+    clearTimeout(this._restartTimer);
+    try { this._rec?.stop(); } catch {}
+    this._rec = null;
+    this._updateBtnUI();
   },
 
+  toggle() {
+    if (this.isListening) {
+      this.stop();
+      toast('🎤 Голос выключен');
+    } else {
+      if (this.start()) {
+        toast('🎤 Слушаю! Скажи "приготовь карбонару" или "далее"', 'success', 3500);
+      }
+    }
+  },
+
+  _updateBtnUI() {
+    const btns = document.querySelectorAll('#btn-voice-nav, #btn-voice-global');
+    btns.forEach(btn => {
+      if (this.isListening) {
+        btn.classList.add('recording');
+      } else {
+        btn.classList.remove('recording');
+      }
+    });
+  },
+
+  // === ОБРАБОТКА КОМАНД с учётом контекста ===
   _handle(text) {
-    if (/следующий|дальше|далее|вперёд/.test(text)) RecipeManager.next();
-    else if (/назад|предыдущий|прошлый/.test(text)) RecipeManager.prev();
-    else if (/повтори|озвуч|читай/.test(text)) Voice.speak(RecipeManager.current?.steps[RecipeManager.step]);
-    else if (/стоп|выход|закрыть|хватит/.test(text)) showScreen('home');
-    else if (/первый|начало/.test(text)) { RecipeManager.step = 0; RecipeManager.render(); }
+    // На каком экране сейчас?
+    const activeScreen = document.querySelector('.screen.active')?.id || '';
+    const onRecipe = activeScreen === 'screen-recipe';
+    const onHome = activeScreen === 'screen-home';
+
+    // === Команды НАВИГАЦИИ по рецепту (если на экране рецепта) ===
+    if (onRecipe) {
+      if (/(следующ|дальше|далее|вперёд|вперед|давай дальше)/.test(text)) {
+        RecipeManager.next();
+        haptic('light');
+        return;
+      }
+      if (/(назад|предыдущ|прошл|вернись)/.test(text)) {
+        RecipeManager.prev();
+        haptic('light');
+        return;
+      }
+      if (/(повтори|озвучь|читай|прочти)/.test(text)) {
+        if (RecipeManager.current?.steps[RecipeManager.step]) {
+          Voice.speak(RecipeManager.current.steps[RecipeManager.step]);
+        }
+        return;
+      }
+      if (/(в начало|с начала|первый шаг)/.test(text)) {
+        RecipeManager.step = 0;
+        RecipeManager.render();
+        return;
+      }
+    }
+
+    // === СТОП работает везде ===
+    if (/(стоп|выход|закрой|закрыть|отмена|хватит|тихо|молчи)/.test(text)) {
+      Voice.stop();
+      if (onRecipe) {
+        toast('Озвучка остановлена');
+      } else {
+        this.stop();
+      }
+      return;
+    }
+
+    // === WAKE-WORD команды (на главном экране) ===
+    if (onHome) {
+      // Триггеры: "приготовь X", "хочу X", "сделай X", "рецепт X", "давай приготовим X"
+      const wakeWordPatterns = [
+        /(?:привет.*?(?:давай |)|давай |хочу |хотим |можешь |мне |нам |)?(?:приготов(?:ь|им|ить)|сдела(?:й|ем|ть)|рецепт)\s+(.+)/i,
+        /(?:давай |хочу |)?(?:покажи|найди|подскажи)(?:\s+рецепт)?\s+(.+)/i,
+        /(?:что|как)\s+(?:приготовить|сделать|готовить)\s+(?:из\s+)?(.+)/i
+      ];
+
+      let dish = null;
+      for (const pattern of wakeWordPatterns) {
+        const m = text.match(pattern);
+        if (m && m[1]) {
+          dish = m[1].trim()
+            .replace(/^(?:это |же |то |мне |нам |для меня |)/i, '')
+            .replace(/[.?!]+$/, '')
+            .trim();
+          break;
+        }
+      }
+
+      if (dish && dish.length > 2) {
+        const input = $('dish-input');
+        if (input) input.value = dish;
+        haptic('medium');
+        toast(`🍳 Готовлю рецепт: ${dish}`);
+        // Автоматически переход в детали и генерация
+        state.ingredients = dish;
+        setTimeout(() => showScreen('details'), 500);
+        return;
+      }
+
+      // Просто "привет" — поприветствуем
+      if (/^(привет|здравствуй|шеф|hello)/.test(text)) {
+        toast('👋 Привет! Скажи что приготовить, например: "приготовь омлет"', 'success', 4000);
+        return;
+      }
+    }
   }
 };
+window.VoiceNav = VoiceNav;
 
 // ============================================================
 //  GATED ACTIONS (проверка подписки)
