@@ -105,165 +105,36 @@ const API = {
 };
 
 // ============================================================
-//  TTS — Google Translate Voice
+//  ГОЛОС — единый поток микрофона (разрешение один раз)
 // ============================================================
 
-const abbrMap = {
-  'шт\\.?\\b': 'штук', 'г\\.?\\b': 'грамм', 'мл\\b': 'миллилитров',
-  'кг\\b': 'килограмм', 'ч\\.л\\.?\\b': 'чайной ложки',
-  'ст\\.л\\.?\\b': 'столовой ложки', 'мин\\.?\\b': 'минут',
-  'сек\\b': 'секунд', '°C': 'градусов Цельсия', '°': 'градусов'
-};
-const emojiRe = /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu;
-
-function prepareForTTS(text) {
-  if (!text) return '';
-  let s = text.replace(/<[^>]+>/g, '').replace(emojiRe, '').replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim();
-  for (const [abbr, full] of Object.entries(abbrMap))
-    s = s.replace(new RegExp(abbr, 'gi'), full);
-  return s.length > 4000 ? s.slice(0, 4000) + '...' : s;
-}
-
 const Voice = {
-  _audio: null,
+  _stream: null,          // постоянный поток — разрешение спрашивается 1 раз
   _mediaRecorder: null,
   _chunks: [],
   isRecording: false,
-  isSpeaking: false,
-  _voices: [],
-  _voicesReady: false,
 
-  // === Инициализация — выбираем лучший голос на устройстве ===
-  init() {
-    if (!('speechSynthesis' in window)) return;
+  // Получить/переиспользовать поток микрофона
+  async _getStream() {
+    if (this._stream && this._stream.active) return this._stream;
+    this._stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return this._stream;
+  },
 
-    const loadVoices = () => {
-      this._voices = window.speechSynthesis.getVoices();
-      if (this._voices.length > 0) {
-        this._voicesReady = true;
-        // Один раз логируем для диагностики
-        const ruVoices = this._voices.filter(v => v.lang.startsWith('ru'));
-        if (ruVoices.length) {
-          console.log('[Voice] Русские голоса:', ruVoices.map(v => v.name).join(', '));
-        }
+  // Проверка — было ли уже выдано разрешение
+  async hasPermission() {
+    try {
+      if (navigator.permissions) {
+        const status = await navigator.permissions.query({ name: 'microphone' });
+        return status.state === 'granted';
       }
-    };
-
-    loadVoices();
-    if (!this._voicesReady) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
+    } catch {}
+    return !!(this._stream && this._stream.active);
   },
 
-  // === Выбор лучшего русского женского голоса ===
-  _pickBestVoice() {
-    if (!this._voices.length) this._voices = window.speechSynthesis.getVoices();
-    const ru = this._voices.filter(v => v.lang === 'ru-RU' || v.lang.startsWith('ru'));
-    if (!ru.length) return null;
-
-    // Приоритеты — лучшие голоса с естественным звучанием
-    const priorities = [
-      /Yandex/i,                    // Яндекс голоса — самые приятные
-      /Milena|Katya|Alyona|Tatiana/i, // iOS женские
-      /Google.*ru|русск/i,          // Google русский
-      /Microsoft.*Svetlana|Irina/i,  // Microsoft Edge
-      /female|жен/i,                 // любой женский
-    ];
-
-    for (const re of priorities) {
-      const found = ru.find(v => re.test(v.name));
-      if (found) return found;
-    }
-    return ru[0]; // fallback — первый русский
-  },
-
-  // === ОЗВУЧКА — только Web Speech (быстро, бесплатно, приятный голос) ===
-  speak(text) {
-    const clean = prepareForTTS(text);
-    if (!clean) return;
-    this.stop();
-
-    if (!('speechSynthesis' in window)) {
-      console.warn('[Voice] speechSynthesis недоступен');
-      return;
-    }
-
-    // Готовим — отменяем предыдущее
-    window.speechSynthesis.cancel();
-
-    // Если голоса не загружены — ждём
-    if (!this._voicesReady) {
-      this._voices = window.speechSynthesis.getVoices();
-      this._voicesReady = this._voices.length > 0;
-    }
-
-    // Разбиваем длинный текст на части (браузеры обрывают >300 символов)
-    const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
-    const chunks = [];
-    let buf = '';
-    for (const s of sentences) {
-      if ((buf + s).length > 220) {
-        if (buf) chunks.push(buf);
-        buf = s;
-      } else {
-        buf += s;
-      }
-    }
-    if (buf) chunks.push(buf);
-
-    const voice = this._pickBestVoice();
-    this.isSpeaking = true;
-    this._updateSpeakBtn();
-
-    let i = 0;
-    const speakNext = () => {
-      if (i >= chunks.length) {
-        this.isSpeaking = false;
-        this._updateSpeakBtn();
-        return;
-      }
-      const utter = new SpeechSynthesisUtterance(chunks[i++]);
-      utter.lang = 'ru-RU';
-      utter.rate = 0.95;     // чуть медленнее обычного
-      utter.pitch = 1.05;    // чуть выше — теплее
-      utter.volume = 1;
-      if (voice) utter.voice = voice;
-
-      utter.onend = () => {
-        if (this.isSpeaking) speakNext();
-      };
-      utter.onerror = () => {
-        if (this.isSpeaking) speakNext();
-      };
-      window.speechSynthesis.speak(utter);
-    };
-
-    speakNext();
-  },
-
-  stop() {
-    if (this._audio) { this._audio.pause(); this._audio.src = ''; this._audio = null; }
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    this.isSpeaking = false;
-    this._updateSpeakBtn();
-  },
-
-  _updateSpeakBtn() {
-    const btn = document.getElementById('btn-voice-read');
-    if (!btn) return;
-    if (this.isSpeaking) {
-      btn.classList.add('speaking');
-      btn.title = 'Остановить озвучку';
-    } else {
-      btn.classList.remove('speaking');
-      btn.title = 'Озвучить шаг';
-    }
-  },
-
-  // === ЗАПИСЬ ГОЛОСА ===
   async startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await this._getStream();
       this._mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       this._chunks = [];
       this._mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this._chunks.push(e.data); };
@@ -281,7 +152,7 @@ const Voice = {
       if (!this._mediaRecorder) return resolve('');
       this._mediaRecorder.onstop = async () => {
         const blob = new Blob(this._chunks, { type: 'audio/webm' });
-        this._mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        // НЕ останавливаем треки потока — переиспользуем чтобы не спрашивать разрешение снова
         this.isRecording = false;
         try { const d = await API.recognizeVoice(blob); resolve(d.text || ''); }
         catch { resolve(''); }
@@ -290,11 +161,6 @@ const Voice = {
     });
   }
 };
-
-// Инициализация голосов при загрузке
-if (typeof window !== 'undefined') {
-  setTimeout(() => Voice.init(), 100);
-}
 
 // ============================================================
 //  РЕЦЕПТЫ В БД (история + избранное)
@@ -644,7 +510,6 @@ function showScreen(name) {
   const screen = $(`screen-${name}`);
   if (!screen) return;
   screen.classList.add('active');
-  Voice.stop();
   haptic('light');
   window.scrollTo(0, 0);
 
@@ -983,21 +848,21 @@ window.showModeEditor = function() {
 
         <div class="mode-list">
           <button type="button" class="mode-card ${currentMode==='standard'?'active':''}" data-mode="standard">
-            <div class="mode-icon">🍽️</div>
+            <div class="mode-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18M5 11a7 7 0 0 1 14 0M8.5 11l-.5 8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l-.5-8"/></svg></div>
             <div class="mode-info">
               <b>Обычный</b>
               <small>Универсальные рецепты для всех</small>
             </div>
           </button>
           <button type="button" class="mode-card ${currentMode==='family'?'active':''}" data-mode="family">
-            <div class="mode-icon">👨‍👩‍👧</div>
+            <div class="mode-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M15 20v-1a3 3 0 0 1 3-3h0a3 3 0 0 1 3 3v1"/></svg></div>
             <div class="mode-info">
               <b>Семья с детьми</b>
               <small>Рецепты которые понравятся и детям, без острого</small>
             </div>
           </button>
           <button type="button" class="mode-card ${currentMode==='fitness'?'active':''}" data-mode="fitness">
-            <div class="mode-icon">💪</div>
+            <div class="mode-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 6l3-3M6 18l-3 3M6.5 6.5L3 10l4 4 3-3M17.5 17.5L21 14l-4-4-3 3"/></svg></div>
             <div class="mode-info">
               <b>Фитнес</b>
               <small>КБЖУ, чистые продукты, спортивное питание</small>
@@ -1210,21 +1075,9 @@ $('dish-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('btn-send').click(); }
 });
 
-// Голосовой ввод
-$('btn-voice').addEventListener('click', async e => {
-  const btn = e.currentTarget;
-  if (!Voice.isRecording) {
-    const ok = await Voice.startRecording();
-    if (ok) { btn.classList.add('recording'); btn.textContent = '⏹'; haptic('medium'); }
-  } else {
-    btn.classList.remove('recording');
-    btn.textContent = '🎤';
-    btn.disabled = true;
-    const text = await Voice.stopRecording();
-    btn.disabled = false;
-    if (text) { $('dish-input').value = text; hapticNotify('success'); toast('✅ Распознано!'); }
-    else toast('Не удалось распознать, попробуй ещё раз', 'error');
-  }
+// Голосовое управление по кнопке-диктофону (распознаёт команды + заполняет поле)
+$('btn-voice').addEventListener('click', () => {
+  VoiceNav.toggle();
 });
 
 // ============================================================
@@ -1270,21 +1123,6 @@ $('btn-generate').addEventListener('click', async () => {
 
 $('btn-next').addEventListener('click', () => RecipeManager.next());
 $('btn-prev').addEventListener('click', () => RecipeManager.prev());
-
-// Озвучка шага — переключатель play/stop
-$('btn-voice-read').addEventListener('click', () => {
-  if (!RecipeManager.current) return;
-  if (Voice.isSpeaking) {
-    Voice.stop();
-    haptic('light');
-    return;
-  }
-  const step = RecipeManager.current.steps[RecipeManager.step];
-  if (step) {
-    Voice.speak(step);
-    haptic('light');
-  }
-});
 
 $('btn-full-recipe').addEventListener('click', () => {
   if (!RecipeManager.current) return;
@@ -2012,7 +1850,7 @@ const VoiceNav = {
   },
 
   _updateBtnUI() {
-    const btns = document.querySelectorAll('#btn-voice-nav, #btn-voice-global');
+    const btns = document.querySelectorAll('#btn-voice-nav, #btn-voice');
     btns.forEach(btn => {
       if (this.isListening) {
         btn.classList.add('recording');
@@ -2041,12 +1879,6 @@ const VoiceNav = {
         haptic('light');
         return;
       }
-      if (/(повтори|озвучь|читай|прочти)/.test(text)) {
-        if (RecipeManager.current?.steps[RecipeManager.step]) {
-          Voice.speak(RecipeManager.current.steps[RecipeManager.step]);
-        }
-        return;
-      }
       if (/(в начало|с начала|первый шаг)/.test(text)) {
         RecipeManager.step = 0;
         RecipeManager.render();
@@ -2054,14 +1886,10 @@ const VoiceNav = {
       }
     }
 
-    // === СТОП работает везде ===
+    // === СТОП — выключает голосовое управление ===
     if (/(стоп|выход|закрой|закрыть|отмена|хватит|тихо|молчи)/.test(text)) {
-      Voice.stop();
-      if (onRecipe) {
-        toast('Озвучка остановлена');
-      } else {
-        this.stop();
-      }
+      this.stop();
+      toast('🎤 Голос выключен');
       return;
     }
 
